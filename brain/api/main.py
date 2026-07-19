@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 
 from fastapi import FastAPI
@@ -12,7 +13,11 @@ load_dotenv()
 from brain.index import Embedder, VectorStore, DocumentStore
 from brain.search.retriever import Retriever
 from brain.search.synthesiser import synthesise
-from brain.search.agent import Agent
+
+if os.getenv("AGENT_MODE", "classic") == "graph":
+    from brain.search.agent_graph import GraphAgent as _AgentImpl
+else:
+    from brain.search.agent import Agent as _AgentImpl
 from brain.search.web_search import web_search
 
 app = FastAPI(title="Second Brain API")
@@ -33,7 +38,7 @@ _retriever = Retriever(
     vector_store=_vector_store,
     document_store=_document_store,
 )
-_agent = Agent(retriever=_retriever)
+_agent = _AgentImpl(retriever=_retriever)
 print("Ready.", file=sys.stderr)
 
 
