@@ -23,7 +23,12 @@
 *   **CLI для индексации и отладки** — команды `index`, `watch`, `stats`, `grep`, `search-test` и другие;
 *   **Веб-интерфейс** — чат на React + Vite + Tailwind с потоковой выдачей ответа и отображением источников.
 
-<div><img src="resources/screenshot.png" width="1000" alt="Скриншот интерфейса" /></div>
+<div><img src="resources/demo.gif" width="1000" alt="Демонстрация работы" /></div>
+
+<details>
+<summary>Статичный скриншот интерфейса</summary>
+<img src="resources/screenshot.png" width="1000" alt="Скриншот интерфейса" />
+</details>
 
 ## Архитектура
 
