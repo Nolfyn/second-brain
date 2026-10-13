@@ -802,40 +802,19 @@ class Retriever:
         ]
 
     def _expand_query(self, query: str) -> list[str]:
-        import ollama
-
-        model = os.getenv("OLLAMA_MODEL", "llama3")
-
-        prompt = (
-            f"Generate 3 short search queries to find personal notes about:\n"
-            f'"{query}"\n\n'
-            f"Rules:\n"
-            f"- If the query is in English, write 2 English variants and "
-            f"1 Russian translation\n"
-            f"- If the query is in Russian, write 2 Russian variants and "
-            f"1 English translation\n"
-            f"- For film/book/show/game titles, include the Russian "
-            f"transliteration (e.g. 'Twin Peaks' -> 'Твин Пикс')\n"
-            f"- Each query should be 2-6 words, focused on key nouns\n"
-            f"- Output ONLY the queries, one per line, no numbering"
-        )
+        from brain.llm import get_llm
+        from brain.search import prompts
 
         try:
-            from brain.search.synthesiser import _model_options
-
-            response = ollama.chat(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                options={
-                    **_model_options(),
-                    "temperature": 0.3,
-                    "num_predict": 80,
-                },
+            llm = get_llm()
+            raw = llm.chat(
+                [{"role": "user", "content": prompts.render("expansion", query=query)}],
+                temperature=0.3,
+                max_tokens=80,
             )
-            raw = response["message"]["content"].strip()
             extras = [
                 line.strip().strip('"').strip("'")
-                for line in raw.split("\n")
+                for line in raw.strip().split("\n")
                 if line.strip() and len(line.strip()) > 3
             ][:3]
             queries = [query] + extras
