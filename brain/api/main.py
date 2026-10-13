@@ -1,5 +1,4 @@
 import json
-import os
 import sys
 
 from fastapi import FastAPI
@@ -13,12 +12,6 @@ load_dotenv()
 from brain.index import Embedder, VectorStore, DocumentStore
 from brain.search.retriever import Retriever
 from brain.search.synthesiser import synthesise
-
-if os.getenv("AGENT_MODE", "classic") == "graph":
-    from brain.search.agent_graph import GraphAgent as _AgentImpl
-else:
-    from brain.search.agent import Agent as _AgentImpl
-from brain.search.web_search import web_search
 
 app = FastAPI(title="Second Brain API")
 
@@ -38,24 +31,16 @@ _retriever = Retriever(
     vector_store=_vector_store,
     document_store=_document_store,
 )
-_agent = _AgentImpl(retriever=_retriever)
 print("Ready.", file=sys.stderr)
 
 
 class AskRequest(BaseModel):
     query: str
-    top_k: int = 8
-    web_search: bool = False
-
-
-class AgentRequest(BaseModel):
-    query: str
-    web_search: bool = False
 
 
 @app.post("/ask")
 def ask(request: AskRequest):
-    """Regular pipeline: retrieve -> stream LLM answer."""
+    """Пайплайн retrieve -> стриминг ответа LLM."""
     results = _retriever.retrieve(request.query)
     chunks = [
         {
@@ -66,34 +51,11 @@ def ask(request: AskRequest):
         }
         for r in results
     ]
-    web = web_search(request.query) if request.web_search else None
 
     def stream():
-        # Sources first
-        yield (
-            json.dumps(
-                {
-                    "type": "sources",
-                    "local": chunks,
-                    "web": web or [],
-                }
-            )
-            + "\n"
-        )
-        # Then streamed answer
-        for token in synthesise(request.query, chunks, web):
+        yield json.dumps({"type": "sources", "local": chunks}) + "\n"
+        for token in synthesise(request.query, chunks):
             yield json.dumps({"type": "token", "content": token}) + "\n"
-
-    return StreamingResponse(stream(), media_type="application/x-ndjson")
-
-
-@app.post("/agent")
-def agent_ask(request: AgentRequest):
-    """Agentic pipeline: model decides how many search calls to make."""
-
-    def stream():
-        for event in _agent.run(request.query, use_web=request.web_search):
-            yield json.dumps(event, ensure_ascii=False) + "\n"
 
     return StreamingResponse(stream(), media_type="application/x-ndjson")
 
@@ -105,7 +67,7 @@ def stats():
 
 @app.get("/debug/search")
 def debug_search(q: str):
-    """Bypass LLM -- see exactly what the retriever returns."""
+    """Обход LLM — показывает, что именно вернул ретривер."""
     results = _retriever.retrieve(q)
     return {
         "query": q,

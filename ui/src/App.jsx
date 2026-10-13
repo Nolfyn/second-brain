@@ -5,9 +5,6 @@ import ChatInput from "./components/ChatInput";
 
 export default function App() {
   const [messages, setMessages] = useState([]);
-  const [webSearch, setWebSearch] = useState(false);
-  const [agentMode, setAgentMode] = useState(false);
-  const [filter, setFilter] = useState("all");
   const [recentQueries, setRecentQueries] = useState([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState(null);
@@ -28,17 +25,14 @@ export default function App() {
     setIsStreaming(true);
     setMessages((prev) => [
       ...prev,
-      { role: "ai", content: "", sources: null, toolActivity: [], isStreaming: true },
+      { role: "ai", content: "", sources: null, isStreaming: true },
     ]);
 
     try {
-      const endpoint = agentMode ? "/api/agent" : "/api/ask";
-      const body = agentMode ? { query } : { query, web_search: webSearch };
-
-      const response = await fetch(endpoint, {
+      const response = await fetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ query }),
       });
 
       if (!response.ok || !response.body) throw new Error(`${response.status}`);
@@ -63,15 +57,7 @@ export default function App() {
             setMessages((prev) =>
               prev.map((m, idx) =>
                 idx === prev.length - 1
-                  ? { ...m, sources: { local: event.local, web: event.web } }
-                  : m
-              )
-            );
-          } else if (event.type === "tool_call") {
-            setMessages((prev) =>
-              prev.map((m, idx) =>
-                idx === prev.length - 1
-                  ? { ...m, toolActivity: [...(m.toolActivity || []), event] }
+                  ? { ...m, sources: event.local }
                   : m
               )
             );
@@ -100,8 +86,6 @@ export default function App() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-base text-primary">
       <Sidebar
-        activeFilter={filter}
-        onFilterChange={setFilter}
         recentQueries={recentQueries}
         onSelectRecent={handleSend}
       />
@@ -109,14 +93,7 @@ export default function App() {
       <div className="flex flex-1 flex-col min-w-0">
         {/* Header */}
         <header className="flex items-center justify-between border-b border-border px-6 py-3.5 flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <span className="text-[15px] font-semibold tracking-tight text-primary">Second Brain</span>
-            {agentMode && (
-              <span className="rounded-full bg-accent-glow border border-accent-dim px-2.5 py-0.5 text-[11px] font-medium text-accent">
-                Agent
-              </span>
-            )}
-          </div>
+          <span className="text-[15px] font-semibold tracking-tight text-primary">Second Brain</span>
           <span className="text-[12px] text-muted hidden sm:block">
             {isStreaming ? "Thinking…" : "Ready"}
           </span>
@@ -143,7 +120,6 @@ export default function App() {
                   role={m.role}
                   content={m.content}
                   sources={m.sources}
-                  toolActivity={m.toolActivity}
                   isStreaming={m.isStreaming}
                 />
               ))}
@@ -159,14 +135,7 @@ export default function App() {
 
         {/* Input */}
         <div className="mx-auto w-full max-w-chat flex-shrink-0">
-          <ChatInput
-            onSend={handleSend}
-            webSearch={webSearch}
-            onToggleWebSearch={() => setWebSearch((v) => !v)}
-            agentMode={agentMode}
-            onToggleAgent={() => setAgentMode((v) => !v)}
-            disabled={isStreaming}
-          />
+          <ChatInput onSend={handleSend} disabled={isStreaming} />
         </div>
       </div>
     </div>

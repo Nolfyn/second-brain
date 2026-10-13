@@ -77,9 +77,8 @@ def _stream_safe(stream) -> Generator[str, None, None]:
 def synthesise(
     query: str,
     chunks: list[dict],
-    web_results: list[dict] | None = None,
 ) -> Generator[str, None, None]:
-    """Stream answer tokens given a query and retrieved chunks."""
+    """Стримит ответ по токенам для запроса и найденных чанков."""
     lang = detect_language(query)
     estimated_tokens = len(chunks) * 400
 
@@ -91,7 +90,7 @@ def synthesise(
         return
 
     system = language_instruction(query) + "\n\n" + _SYSTEM
-    user = _build_user_prompt(query, chunks, web_results, lang)
+    user = _build_user_prompt(query, chunks, lang)
 
     stream = ollama.chat(
         model=_MODEL,
@@ -233,7 +232,6 @@ def _map_reduce_synthesise(
 def _build_user_prompt(
     query: str,
     chunks: list[dict],
-    web_results: list[dict] | None,
     lang: str = "English",
 ) -> str:
     parts = []
@@ -246,12 +244,7 @@ def _build_user_prompt(
             fname = c["file_path"].replace("\\", "/").split("/")[-1]
             parts.append(f"\n[Excerpt {i} from {fname}]\n{c['text']}")
 
-    if web_results:
-        parts.append("\nWEB SEARCH RESULTS:")
-        for r in web_results:
-            parts.append(f"[{r['url']}]\n{r['snippet']}")
-
-    if not chunks and not web_results:
+    if not chunks:
         parts.append("No relevant content was found in your documents.")
 
     parts.append(f"\nQUESTION: {query}")

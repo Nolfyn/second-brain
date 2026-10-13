@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 
-export default function ChatInput({ onSend, webSearch, onToggleWebSearch, agentMode, onToggleAgent, disabled }) {
+export default function ChatInput({ onSend, disabled }) {
   const [value, setValue] = useState("");
   const textareaRef = useRef(null);
 
-  // Auto-expand textarea as content grows
+  // Автоподстройка высоты textarea под содержимое
   useEffect(() => {
     const ta = textareaRef.current;
     if (!ta) return;
@@ -32,7 +32,6 @@ export default function ChatInput({ onSend, webSearch, onToggleWebSearch, agentM
   return (
     <div className="px-4 pb-4 pt-2">
       <div className="rounded-2xl border border-border bg-surface transition-colors focus-within:border-border-bright">
-        {/* Textarea */}
         <textarea
           ref={textareaRef}
           value={value}
@@ -44,40 +43,9 @@ export default function ChatInput({ onSend, webSearch, onToggleWebSearch, agentM
           className="w-full resize-none bg-transparent px-4 pt-3.5 pb-2 text-[14px] text-primary placeholder:text-muted focus:outline-none disabled:opacity-40"
         />
 
-        {/* Bottom toolbar */}
         <div className="flex items-center justify-between px-3 pb-3 pt-1">
-          <div className="flex items-center gap-2">
-            {/* Agent toggle */}
-            <button
-              onClick={onToggleAgent}
-              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors ${
-                agentMode
-                  ? "bg-accent text-white"
-                  : "bg-elevated text-secondary hover:text-primary border border-border"
-              }`}
-              title="Let the model choose which search tools to use"
-            >
-              <span className={`h-1.5 w-1.5 rounded-full ${agentMode ? "bg-white" : "bg-muted"}`} />
-              Agent
-            </button>
+          <span className="text-[11px] text-muted">Shift+Enter — новая строка · Enter — отправить</span>
 
-            {/* Web search toggle */}
-            <button
-              onClick={onToggleWebSearch}
-              disabled={agentMode}
-              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors ${
-                webSearch && !agentMode
-                  ? "bg-elevated text-success border border-success/30"
-                  : "bg-elevated text-secondary hover:text-primary border border-border"
-              } disabled:opacity-30 disabled:cursor-not-allowed`}
-              title={agentMode ? "Web search is controlled by the agent" : "Include live web results"}
-            >
-              <span className={`h-1.5 w-1.5 rounded-full ${webSearch && !agentMode ? "bg-success" : "bg-muted"}`} />
-              Web
-            </button>
-          </div>
-
-          {/* Send button */}
           <button
             onClick={handleSubmit}
             disabled={disabled || !value.trim()}
@@ -90,9 +58,6 @@ export default function ChatInput({ onSend, webSearch, onToggleWebSearch, agentM
           </button>
         </div>
       </div>
-      <p className="mt-1.5 text-center text-[11px] text-muted">
-        Shift+Enter for new line · Enter to send
-      </p>
     </div>
   );
 }
