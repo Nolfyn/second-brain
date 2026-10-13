@@ -19,10 +19,15 @@ class Indexer:
     Skips files whose checksum hasn't changed since the last run.
     """
 
-    def __init__(self):
-        self._embedder = Embedder()
-        self._vector_store = VectorStore()
-        self._document_store = DocumentStore()
+    def __init__(
+        self,
+        embedder: Embedder | None = None,
+        vector_store: VectorStore | None = None,
+        document_store: DocumentStore | None = None,
+    ):
+        self._embedder = embedder or Embedder()
+        self._vector_store = vector_store or VectorStore()
+        self._document_store = document_store or DocumentStore()
 
     def index_folder(self, folder: Path) -> dict:
         """
