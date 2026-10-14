@@ -16,6 +16,14 @@ def test_default_prompts_loaded():
         assert p[key].strip()
 
 
+def test_shipped_yaml_is_actually_loaded():
+    # Регрессия: файл brain/prompts.yaml должен реально читаться
+    # (не возвращать дефолты из кода).
+    text = prompts.get_prompts()["synthesis_system"]
+    assert "HALLUCINATE" in text
+    assert len(text) > 500
+
+
 def test_yaml_overrides_defaults(tmp_path, monkeypatch):
     yaml_file = tmp_path / "prompts.yaml"
     yaml_file.write_text("synthesis_system: КАСТОМНЫЙ ПРОМПТ\n", encoding="utf-8")

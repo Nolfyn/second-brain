@@ -6,6 +6,7 @@
 """
 
 import os
+import threading
 
 from brain.index.vector_store import SearchResult
 
@@ -18,13 +19,21 @@ class Reranker:
             "RERANKER_MODEL", _DEFAULT_MODEL
         )
         self._model = None
+        self._lock = threading.Lock()
 
     def _load(self):
+        # Двойная проверка под локом: конкурентные первые запросы
+        # не должны загрузить модель дважды
         if self._model is None:
-            from sentence_transformers import CrossEncoder
+            with self._lock:
+                if self._model is None:
+                    from sentence_transformers import CrossEncoder
 
-            print(f"[RERANKER] loading cross-encoder '{self._model_name}'...")
-            self._model = CrossEncoder(self._model_name)
+                    print(
+                        f"[RERANKER] loading cross-encoder "
+                        f"'{self._model_name}'..."
+                    )
+                    self._model = CrossEncoder(self._model_name)
         return self._model
 
     def rerank(

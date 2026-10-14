@@ -103,7 +103,7 @@ def reindex(
 ):
     """Переиндексирует файл или папку, игнорируя контрольные суммы."""
     from brain.index import Indexer, DocumentStore
-    from brain.index.document_store import FileRecord, ChunkRecord
+    from brain.index.document_store import FileRecord, ChunkRecord, FileTerm
 
     target = Path(path).expanduser().resolve()
     store = DocumentStore()
@@ -130,6 +130,7 @@ def reindex(
         )
         for p in paths_to_clear:
             session.query(ChunkRecord).filter_by(file_path=p).delete()
+            session.query(FileTerm).filter_by(file_path=p).delete()
             session.query(FileRecord).filter_by(file_path=p).delete()
         session.commit()
         console.print("[green]Очищено.[/green]")

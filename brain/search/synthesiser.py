@@ -59,7 +59,7 @@ def synthesise(
         and len(chunks) > _MAP_REDUCE_MIN_CHUNKS
     ):
         log.info("large context (%d chunks), using map-reduce", len(chunks))
-        yield from _map_reduce_synthesise(query, chunks, lang)
+        yield from _map_reduce_synthesise(query, chunks, lang, history)
         return
 
     llm = get_llm()
@@ -82,6 +82,7 @@ def _map_reduce_synthesise(
     query: str,
     chunks: list[dict],
     lang: str,
+    history: list[dict] | None = None,
 ) -> Generator[str, None, None]:
     """MAP: сводка по каждой секции каждого файла. REDUCE: общий ответ."""
     llm = get_llm()
@@ -132,10 +133,9 @@ def _map_reduce_synthesise(
     )
 
     stream = llm.chat(
-        [
-            {"role": "system", "content": reduce_system},
-            {"role": "user", "content": reduce_user},
-        ],
+        [{"role": "system", "content": reduce_system}]
+        + (history or [])
+        + [{"role": "user", "content": reduce_user}],
         stream=True,
     )
     yield from _stream_safe(stream)

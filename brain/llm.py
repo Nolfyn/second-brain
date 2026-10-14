@@ -25,15 +25,26 @@ def get_llm() -> "BaseLLM":
     if provider == "anthropic":
         return AnthropicLLM(
             model=os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-5"),
-            api_key=os.environ["ANTHROPIC_API_KEY"],
+            api_key=_require_env("ANTHROPIC_API_KEY"),
         )
     if provider == "openai":
         return OpenAILLM(
             model=os.getenv("OPENAI_MODEL", "kimi-k2-0905-preview"),
-            api_key=os.environ["OPENAI_API_KEY"],
+            api_key=_require_env("OPENAI_API_KEY"),
             base_url=os.getenv("OPENAI_BASE_URL", "https://api.moonshot.ai/v1"),
         )
     raise ValueError(f"Неизвестный провайдер LLM: '{provider}'")
+
+
+def _require_env(name: str) -> str:
+    """Значение переменной окружения или понятная ошибка."""
+    value = os.getenv(name)
+    if not value:
+        raise ValueError(
+            f"Переменная окружения {name} не задана — "
+            "проверьте .env (см. .env.example)"
+        )
+    return value
 
 
 class BaseLLM:
@@ -95,7 +106,9 @@ class AnthropicLLM(BaseLLM):
         if temperature is not None:
             payload["temperature"] = temperature
         if not stream:
-            data = self._client.post(self.URL, json=payload).json()
+            resp = self._client.post(self.URL, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
             return "".join(b.get("text", "") for b in data.get("content", []))
         return self._stream({**payload, "stream": True})
 
@@ -123,7 +136,9 @@ class OpenAILLM(BaseLLM):
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
         if not stream:
-            data = self._client.post(self._url, json=payload).json()
+            resp = self._client.post(self._url, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
             return data["choices"][0]["message"]["content"]
         return self._stream({**payload, "stream": True})
 

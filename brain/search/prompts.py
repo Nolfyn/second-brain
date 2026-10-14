@@ -4,7 +4,7 @@ from pathlib import Path
 
 import yaml
 
-_PROMPTS_PATH = Path(__file__).resolve().parents[2] / "prompts.yaml"
+_PROMPTS_PATH = Path(__file__).resolve().parents[1] / "prompts.yaml"
 
 _DEFAULTS = {
     "synthesis_system": (

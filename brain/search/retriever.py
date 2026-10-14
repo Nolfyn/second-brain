@@ -85,22 +85,35 @@ class Retriever:
             results = self._keyword_search(kws, scope_file=named_file)
             if results:
                 return self._finalize(
-                    query, self._mark(results, "keyword")[: self.MAX_KEYWORD]
+                    query,
+                    self._mark(results, "keyword"),
+                    max_results=self.MAX_KEYWORD,
                 )
 
         if named_file:
             return self._finalize(
-                query, self._file_search(query, named_file)[: self.MAX_FILE],
+                query,
+                self._file_search(query, named_file),
                 keep_ignored=True,
+                max_results=self.MAX_FILE,
             )
 
         if year:
             results = self._year_search(query, year)
-            return self._finalize(query, results[: self.MAX_YEAR])
+            return self._finalize(
+                query, results, max_results=self.MAX_YEAR
+            )
 
         if topic:
             results = self._topic_search(query, topic)
-            return self._finalize(query, results[: self.MAX_FILE])
+            # Порядок topic-выдачи намеренный (секции итогов впереди) —
+            # реранк его пересортировал бы, поэтому здесь он выключен
+            return self._finalize(
+                query,
+                results,
+                max_results=self.MAX_FILE,
+                rerank=False,
+            )
 
         return self._finalize(query, self._semantic_with_entities(query))
 
@@ -286,14 +299,15 @@ class Retriever:
         query: str,
         results: list[SearchResult],
         keep_ignored: bool = False,
+        max_results: int | None = None,
+        rerank: bool = True,
     ) -> list[SearchResult]:
         if not keep_ignored:
             results = self._filter_ignored(results)
-        if self._reranker and len(results) > self.RERANK_THRESHOLD:
-            results = self._reranker.rerank(
-                query, results, top_n=self.MAX_RESULTS
-            )
-        return results[: self.MAX_RESULTS]
+        cap = max_results or self.MAX_RESULTS
+        if rerank and self._reranker and len(results) > self.RERANK_THRESHOLD:
+            results = self._reranker.rerank(query, results, top_n=cap)
+        return results[:cap]
 
     def _load_ignore_patterns(self) -> list[str]:
         """Глоб-паттерны .brainignore: файлы скрыты из общей выдачи,

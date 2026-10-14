@@ -150,7 +150,7 @@ def _detect_encoding(path: Path) -> str:
     try:
         path.read_text(encoding="utf-8")
         return "utf-8"
-    except (UnicodeDecodeError, Exception):
+    except Exception:
         return "windows-1251"
 
 
