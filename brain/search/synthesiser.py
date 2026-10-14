@@ -45,8 +45,12 @@ def _stream_safe(stream) -> Generator[str, None, None]:
 def synthesise(
     query: str,
     chunks: list[dict],
+    history: list[dict] | None = None,
 ) -> Generator[str, None, None]:
-    """Стримит ответ по токенам для запроса и найденных чанков."""
+    """Стримит ответ по токенам для запроса и найденных чанков.
+
+    history — прошлые сообщения чата (user/assistant), уходят в контекст.
+    """
     lang = detect_language(query)
     estimated_tokens = len(chunks) * _TOKENS_PER_CHUNK
 
@@ -66,13 +70,11 @@ def synthesise(
     )
     user = _build_user_prompt(query, chunks, lang)
 
-    stream = llm.chat(
-        [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        stream=True,
-    )
+    messages = [{"role": "system", "content": system}]
+    messages += history or []
+    messages.append({"role": "user", "content": user})
+
+    stream = llm.chat(messages, stream=True)
     yield from _stream_safe(stream)
 
 

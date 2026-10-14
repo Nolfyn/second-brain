@@ -5,7 +5,8 @@ import ChatInput from "./components/ChatInput";
 
 export default function App() {
   const [messages, setMessages] = useState([]);
-  const [recentQueries, setRecentQueries] = useState([]);
+  const [sessionId, setSessionId] = useState(null);
+  const [sessions, setSessions] = useState([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState(null);
   const scrollRef = useRef(null);
@@ -15,13 +16,64 @@ export default function App() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
+  async function refreshSessions() {
+    try {
+      const r = await fetch("/api/sessions");
+      if (r.ok) setSessions(await r.json());
+    } catch {
+      /* backend недоступен — список не критичен */
+    }
+  }
+
+  useEffect(() => {
+    refreshSessions();
+  }, []);
+
+  async function ensureSession() {
+    if (sessionId) return sessionId;
+    const r = await fetch("/api/sessions", { method: "POST" });
+    const { id } = await r.json();
+    setSessionId(id);
+    refreshSessions();
+    return id;
+  }
+
+  async function loadSession(id) {
+    if (isSendingRef.current) return;
+    const r = await fetch(`/api/sessions/${id}`);
+    if (!r.ok) return;
+    const session = await r.json();
+    setSessionId(id);
+    setMessages(
+      session.messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+        sources: m.sources || null,
+        isStreaming: false,
+      }))
+    );
+    setError(null);
+  }
+
+  function newChat() {
+    if (isSendingRef.current) return;
+    setSessionId(null);
+    setMessages([]);
+    setError(null);
+  }
+
+  async function deleteSession(id) {
+    await fetch(`/api/sessions/${id}`, { method: "DELETE" });
+    if (id === sessionId) newChat();
+    refreshSessions();
+  }
+
   async function handleSend(query) {
     if (isSendingRef.current) return;
     isSendingRef.current = true;
     setError(null);
 
     setMessages((prev) => [...prev, { role: "user", content: query }]);
-    setRecentQueries((prev) => [query, ...prev.filter((q) => q !== query)].slice(0, 8));
     setIsStreaming(true);
     setMessages((prev) => [
       ...prev,
@@ -29,7 +81,8 @@ export default function App() {
     ]);
 
     try {
-      const response = await fetch("/api/ask", {
+      const sid = await ensureSession();
+      const response = await fetch(`/api/sessions/${sid}/ask`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query }),
@@ -56,9 +109,7 @@ export default function App() {
           if (event.type === "sources") {
             setMessages((prev) =>
               prev.map((m, idx) =>
-                idx === prev.length - 1
-                  ? { ...m, sources: event.local }
-                  : m
+                idx === prev.length - 1 ? { ...m, sources: event.local } : m
               )
             );
           } else if (event.type === "token") {
@@ -72,6 +123,7 @@ export default function App() {
           }
         }
       }
+      refreshSessions();
     } catch {
       setError("Can't reach the backend. Is the server running?");
     } finally {
@@ -86,8 +138,11 @@ export default function App() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-base text-primary">
       <Sidebar
-        recentQueries={recentQueries}
-        onSelectRecent={handleSend}
+        sessions={sessions}
+        activeSessionId={sessionId}
+        onSelectSession={loadSession}
+        onNewChat={newChat}
+        onDeleteSession={deleteSession}
       />
 
       <div className="flex flex-1 flex-col min-w-0">
