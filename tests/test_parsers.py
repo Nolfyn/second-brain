@@ -1,14 +1,14 @@
 """
 Parser tests.
 
-Required sample files in tests/fixtures/:
-  sample_plain.docx       — an unprotected Word doc with some text
-  sample_protected.docx   — a Word doc protected with the password in your .env
-  sample_text.pdf         — a normal text-based PDF
-  sample_scanned.pdf      — a scanned/image-based PDF (can use any scanned doc)
-  sample_legacy.doc       — an old .doc file (optional, needs LibreOffice)
+Нужные файлы в tests/fixtures/:
+  sample_plain.docx       — незащищённый Word-документ с текстом
+  sample_protected.docx   — Word-документ с паролем из .env
+  sample_text.pdf         — обычный текстовый PDF
+  sample_scanned.pdf      — отсканированный PDF (подойдёт любой скан)
+  sample_legacy.doc       — старый .doc (опционально, нужен LibreOffice)
 
-Create them manually or use the helper script: python tests/make_fixtures.py
+Создайте вручную или скриптом: python tests/make_fixtures.py
 """
 
 import os
@@ -26,7 +26,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Хелперы
 # ---------------------------------------------------------------------------
 
 
@@ -37,7 +37,7 @@ def parse(filename: str) -> ParsedDocument:
 
 
 # ---------------------------------------------------------------------------
-# Dispatcher tests
+# Тесты диспетчера
 # ---------------------------------------------------------------------------
 
 
@@ -55,7 +55,7 @@ def test_dispatcher_raises_on_unknown_extension():
 
 
 # ---------------------------------------------------------------------------
-# DOCX parser tests
+# Тесты DOCX-парсера
 # ---------------------------------------------------------------------------
 
 
@@ -85,12 +85,12 @@ def test_docx_protected_decrypts_correctly():
 )
 def test_docx_result_is_valid_unicode():
     result = parse("sample_plain.docx")
-    # Should not raise — all characters must be valid UTF-8
+    # Не должен бросить исключение — все символы валидного UTF-8
     result.raw_text.encode("utf-8")
 
 
 # ---------------------------------------------------------------------------
-# PDF parser tests
+# Тесты PDF-парсера
 # ---------------------------------------------------------------------------
 
 
@@ -109,13 +109,13 @@ def test_pdf_text_based_extracts_text():
     reason="fixtures/sample_scanned.pdf not found — scanned PDF required",
 )
 def test_pdf_scanned_falls_back_to_ocr():
-    # This test will be slow (OCR is slow) — expected
+    # Тест медленный (OCR медленный) — это нормально
     result = parse("sample_scanned.pdf")
     assert len(result.raw_text) > 10
 
 
 # ---------------------------------------------------------------------------
-# DOC parser tests (requires LibreOffice)
+# Тесты DOC-парсера (нужен LibreOffice)
 # ---------------------------------------------------------------------------
 
 
@@ -130,7 +130,7 @@ def test_doc_legacy_converts_and_extracts():
 
 
 # ---------------------------------------------------------------------------
-# Error handling
+# Обработка ошибок
 # ---------------------------------------------------------------------------
 
 

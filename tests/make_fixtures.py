@@ -48,7 +48,7 @@ def make_protected_docx(output: Path, password: str) -> None:
     import msoffcrypto
     from docx import Document
 
-    # Create a plain docx in memory first
+    # Сначала собираем обычный docx в памяти
     doc = Document()
     doc.add_heading("Protected Document", level=1)
     doc.add_paragraph(
@@ -60,7 +60,7 @@ def make_protected_docx(output: Path, password: str) -> None:
     doc.save(plain_buffer)
     plain_buffer.seek(0)
 
-    # Encrypt it
+    # Шифруем
     encrypted_buffer = io.BytesIO()
     office_file = msoffcrypto.OfficeFile(plain_buffer)
     office_file.encrypt(password, encrypted_buffer)
@@ -90,7 +90,7 @@ def make_text_pdf(output: Path) -> None:
         c.save()
         print(f"Created: {output}")
     except ImportError:
-        # Fallback: create a minimal PDF by hand (no external lib needed)
+        # Фолбэк: минимальный PDF вручную (без внешних библиотек)
         pdf_content = b"""%PDF-1.4
 1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj

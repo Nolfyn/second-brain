@@ -67,7 +67,7 @@ class _DebouncedHandler(FileSystemEventHandler):
         self._schedule_debounced_index(path)
 
     def _schedule_debounced_index(self, path: Path) -> None:
-        """Reset the debounce timer each time this file changes again."""
+        """Сбрасывает таймер при каждом новом изменении файла."""
         key = str(path)
         with self._lock:
             existing_timer = self._pending_timers.get(key)

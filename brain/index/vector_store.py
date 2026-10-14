@@ -20,9 +20,7 @@ class SearchResult:
 
 
 class VectorStore:
-    """
-    Wraps ChromaDB behind a small interface: add() and search().
-    """
+    """ChromaDB за маленьким интерфейсом: add() и search()."""
 
     def __init__(self, db_dir: str | None = None):
         self._client = chromadb.PersistentClient(
@@ -40,7 +38,7 @@ class VectorStore:
         vectors: list[list[float]],
         metadatas: list[dict],
     ) -> None:
-        """Add or update chunks. Existing IDs are overwritten (upsert)."""
+        """Добавление или обновление чанков (upsert по id)."""
         if not chunk_ids:
             return
         self._collection.upsert(
@@ -51,13 +49,13 @@ class VectorStore:
         )
 
     def delete_by_file(self, file_path: str) -> None:
-        """Remove all chunks belonging to a given file (used on re-index)."""
+        """Удаление всех чанков файла (переиндексация, prune)."""
         self._collection.delete(where={"file_path": file_path})
 
     def search(
         self, query_vector: list[float], top_k: int = 5
     ) -> list[SearchResult]:
-        """Return the top_k most similar chunks to the query vector."""
+        """top_k самых похожих на вектор запроса чанков."""
         results = self._collection.query(
             query_embeddings=[query_vector],
             n_results=top_k,
@@ -70,7 +68,7 @@ class VectorStore:
         for i in range(len(results["ids"][0])):
             metadata = results["metadatas"][0][i]
             distance = results["distances"][0][i]
-            # ChromaDB returns cosine distance; convert to a similarity score (0-1)
+            # ChromaDB возвращает косинусное расстояние; переводим в сходство
             score = 1 - distance
 
             search_results.append(
@@ -88,5 +86,5 @@ class VectorStore:
         return search_results
 
     def count(self) -> int:
-        """Total number of chunks currently indexed."""
+        """Число чанков в индексе."""
         return self._collection.count()
