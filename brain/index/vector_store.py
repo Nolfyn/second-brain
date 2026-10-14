@@ -16,6 +16,7 @@ class SearchResult:
     chunk_index: int
     score: float | None  # None, пока результат не оценён (семантика/реранк)
     source: str = field(default="semantic")  # semantic|keyword|file|year|topic
+    section: str | None = None  # заголовок секции, если чанк структурный
 
 
 class VectorStore:
@@ -80,6 +81,7 @@ class VectorStore:
                     file_type=metadata["file_type"],
                     chunk_index=metadata["chunk_index"],
                     score=round(score, 4),
+                    section=metadata.get("section"),
                 )
             )
 

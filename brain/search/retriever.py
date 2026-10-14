@@ -355,6 +355,7 @@ class Retriever:
             chunk_index=chunk.chunk_index,
             score=None,
             source=source,
+            section=getattr(chunk, "section", None),
         )
 
     @staticmethod

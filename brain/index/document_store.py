@@ -36,6 +36,7 @@ class ChunkRecord(Base):
     file_path = Column(String, nullable=False)
     chunk_index = Column(Integer, nullable=False)
     raw_text = Column(Text, nullable=False)
+    section = Column(String, nullable=True)  # заголовок секции, если был
 
 
 class FileTerm(Base):
@@ -65,7 +66,22 @@ class DocumentStore:
         path = db_path or str(config.sqlite_path())
         self._engine = create_engine(f"sqlite:///{path}")
         Base.metadata.create_all(self._engine)
+        self._migrate()
         self._Session = sessionmaker(bind=self._engine)
+
+    def _migrate(self) -> None:
+        """Добавляет колонки, появившиеся после создания старой БД."""
+        from sqlalchemy import text
+
+        with self._engine.begin() as conn:
+            columns = {
+                row[1]
+                for row in conn.execute(text("PRAGMA table_info(chunks)"))
+            }
+            if "section" not in columns:
+                conn.execute(
+                    text("ALTER TABLE chunks ADD COLUMN section VARCHAR")
+                )
 
     def compute_checksum(self, path: Path) -> str:
         """MD5 содержимого файла — достаточно для детекта изменений."""
@@ -106,25 +122,30 @@ class DocumentStore:
             session.close()
 
     def save_chunks(
-        self, file_path: str, chunks: list[tuple[int, str]]
+        self, file_path: str, chunks: list[tuple]
     ) -> None:
-        """Сохраняет тексты чанков и пересобирает термины файла."""
+        """Сохраняет тексты чанков и пересобирает термины файла.
+
+        chunks — кортежи (chunk_index, raw_text) или (chunk_index, raw_text, section).
+        """
         session = self._Session()
         try:
             session.query(ChunkRecord).filter_by(file_path=file_path).delete()
-            for chunk_index, text in chunks:
+            file_terms: set[str] = set()
+            for item in chunks:
+                chunk_index, text = item[0], item[1]
+                section = item[2] if len(item) > 2 else None
                 session.add(
                     ChunkRecord(
                         chunk_id=f"{file_path}::{chunk_index}",
                         file_path=file_path,
                         chunk_index=chunk_index,
                         raw_text=text,
+                        section=section,
                     )
                 )
-            session.query(FileTerm).filter_by(file_path=file_path).delete()
-            file_terms: set[str] = set()
-            for _, text in chunks:
                 file_terms |= _terms_of(text)
+            session.query(FileTerm).filter_by(file_path=file_path).delete()
             session.add_all(
                 FileTerm(file_path=file_path, term=t) for t in file_terms
             )
@@ -268,41 +289,6 @@ class DocumentStore:
             )
             session.expunge_all()
             return results
-        finally:
-            session.close()
-
-    def expand_with_neighbours(
-        self, chunks: list[ChunkRecord], window: int = 1
-    ) -> list[ChunkRecord]:
-        """Добавляет соседние чанки (±window) в том же файле."""
-        if not chunks:
-            return []
-
-        session = self._Session()
-        try:
-            result_map: dict[tuple, ChunkRecord] = {}
-
-            for chunk in chunks:
-                for offset in range(-window, window + 1):
-                    target_index = chunk.chunk_index + offset
-                    if target_index < 0:
-                        continue
-                    key = (chunk.file_path, target_index)
-                    if key in result_map:
-                        continue
-                    neighbour = (
-                        session.query(ChunkRecord)
-                        .filter_by(
-                            file_path=chunk.file_path,
-                            chunk_index=target_index,
-                        )
-                        .first()
-                    )
-                    if neighbour:
-                        result_map[key] = neighbour
-
-            session.expunge_all()
-            return list(result_map.values())
         finally:
             session.close()
 

@@ -70,7 +70,10 @@ class Indexer:
         parser = get_parser(path)
         parsed_doc = parser.parse(path)
 
-        chunks = chunk_text(parsed_doc.raw_text)
+        chunks = chunk_text(
+            parsed_doc.raw_text,
+            sections=parsed_doc.sections or None,
+        )
         if not chunks:
             raise ValueError("No text content extracted")
 
@@ -83,6 +86,7 @@ class Indexer:
                 "file_path": str(path),
                 "file_type": parsed_doc.file_type,
                 "chunk_index": c.chunk_index,
+                "section": c.section,
             }
             for c in chunks
         ]
@@ -93,7 +97,7 @@ class Indexer:
 
         self._document_store.save_chunks(
             str(path),
-            [(c.chunk_index, c.text) for c in chunks],
+            [(c.chunk_index, c.text, c.section) for c in chunks],
         )
         self._document_store.record_file(
             path, parsed_doc.file_type, len(chunks)

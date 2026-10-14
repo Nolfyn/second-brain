@@ -53,6 +53,7 @@ def ask(request: AskRequest):
             "score": r.score,
             "chunk_index": r.chunk_index,
             "source": r.source,
+            "section": r.section,
         }
         for r in results
     ]

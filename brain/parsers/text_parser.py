@@ -5,12 +5,16 @@
 """
 
 import csv
-import io
+import re
 from pathlib import Path
 
+from brain.sections import Section
 from .base import BaseParser, ParsedDocument
 
 _SUPPORTED = {".txt", ".csv", ".html", ".epub", ".pptx"}
+
+# Строка-дата — граница секции в дневниковых txt
+_DATE_LINE = re.compile(r"^\s*\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4}\s*[.)]?\s*$")
 
 
 class TextParser(BaseParser):
@@ -24,7 +28,11 @@ class TextParser(BaseParser):
             )
         self._check_exists(path)
 
-        text = _LOADERS[suffix](path)
+        if suffix == ".txt":
+            text, sections = _load_txt(path)
+        else:
+            text, sections = _LOADERS[suffix](path), []
+
         if not text.strip():
             raise ValueError("No text content extracted.")
 
@@ -32,11 +40,40 @@ class TextParser(BaseParser):
             file_path=str(path),
             file_type=suffix.lstrip("."),
             raw_text=text.strip(),
+            sections=sections,
         )
 
 
-def _load_txt(path: Path) -> str:
-    return path.read_text(encoding=_detect_encoding(path))
+def _load_txt(path: Path) -> tuple[str, list[Section]]:
+    text = path.read_text(encoding=_detect_encoding(path))
+    return text, _sections_by_date_lines(text)
+
+
+def _sections_by_date_lines(text: str) -> list[Section]:
+    """Строки-даты (15.03.2017) начинают секции; без дат — пустой список."""
+    sections: list[Section] = []
+    current_title: str | None = None
+    current_lines: list[str] = []
+
+    def flush() -> None:
+        nonlocal current_lines
+        body = "\n".join(current_lines).strip()
+        if body or current_title is not None:
+            sections.append(Section(title=current_title, text=body))
+        current_lines = []
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped and _DATE_LINE.match(stripped):
+            flush()
+            current_title = stripped
+        elif stripped:
+            current_lines.append(stripped)
+    flush()
+
+    if len(sections) <= 1:
+        return []
+    return sections
 
 
 def _load_csv(path: Path) -> str:
