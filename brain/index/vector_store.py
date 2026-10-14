@@ -1,9 +1,9 @@
-from dataclasses import dataclass
-from pathlib import Path
+from dataclasses import dataclass, field
 
 import chromadb
 
-_DB_DIR = "chroma_db"
+import brain.config as config
+
 _COLLECTION_NAME = "second_brain"
 
 
@@ -14,7 +14,8 @@ class SearchResult:
     file_path: str
     file_type: str
     chunk_index: int
-    score: float  # similarity score, higher = more relevant
+    score: float | None  # None, пока результат не оценён (семантика/реранк)
+    source: str = field(default="semantic")  # semantic|keyword|file|year|topic
 
 
 class VectorStore:
@@ -22,8 +23,10 @@ class VectorStore:
     Wraps ChromaDB behind a small interface: add() and search().
     """
 
-    def __init__(self, db_dir: str = _DB_DIR):
-        self._client = chromadb.PersistentClient(path=db_dir)
+    def __init__(self, db_dir: str | None = None):
+        self._client = chromadb.PersistentClient(
+            path=db_dir or str(config.chroma_dir())
+        )
         self._collection = self._client.get_or_create_collection(
             name=_COLLECTION_NAME,
             metadata={"hnsw:space": "cosine"},

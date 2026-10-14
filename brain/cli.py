@@ -172,6 +172,22 @@ def watch(
 
 
 @app.command()
+def prune():
+    """Убирает из индекса файлы, которых больше нет на диске."""
+    from brain.index import DocumentStore, VectorStore
+
+    store = DocumentStore()
+    removed = store.prune_missing()
+    if removed:
+        vector_store = VectorStore()
+        for path in removed:
+            vector_store.delete_by_file(path)
+    console.print(f"[green]Убрано из индекса:[/green] {len(removed)} файл(ов)")
+    for path in removed:
+        console.print(f"  {path}")
+
+
+@app.command()
 def grep(
     keyword: str = typer.Argument(
         ..., help="Подстрока для поиска по тексту проиндексированных чанков."

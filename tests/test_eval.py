@@ -99,3 +99,24 @@ def test_indexer_accepts_injected_stores(tmp_path):
     indexer.index_folder(docs)
 
     assert store.stats()["total_files"] == 1
+
+
+def test_indexer_remove_file(tmp_path):
+    from brain.index import Embedder, VectorStore, DocumentStore, Indexer
+
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    note = docs / "note.txt"
+    note.write_text("Заметка на удаление.", encoding="utf-8")
+
+    store = DocumentStore(str(tmp_path / "eval.db"))
+    indexer = Indexer(
+        embedder=Embedder(),
+        vector_store=VectorStore(str(tmp_path / "chroma")),
+        document_store=store,
+    )
+    indexer.index_folder(docs)
+    indexer.remove_file(note)
+
+    assert store.stats()["total_files"] == 0
+    assert store.get_chunks_for_paths([str(note)]) == []

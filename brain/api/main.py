@@ -1,5 +1,5 @@
 import json
-import sys
+import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,7 +11,10 @@ load_dotenv()
 
 from brain.index import Embedder, VectorStore, DocumentStore
 from brain.search.retriever import Retriever
+from brain.search.reranker import Reranker
 from brain.search.synthesiser import synthesise
+
+log = logging.getLogger(__name__)
 
 app = FastAPI(title="Second Brain API")
 
@@ -22,7 +25,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-print("Loading shared instances...", file=sys.stderr)
+log.info("Loading shared instances...")
 _embedder = Embedder()
 _vector_store = VectorStore()
 _document_store = DocumentStore()
@@ -30,8 +33,9 @@ _retriever = Retriever(
     embedder=_embedder,
     vector_store=_vector_store,
     document_store=_document_store,
+    reranker=Reranker(),
 )
-print("Ready.", file=sys.stderr)
+log.info("Ready.")
 
 
 class AskRequest(BaseModel):
@@ -48,6 +52,7 @@ def ask(request: AskRequest):
             "text": r.text,
             "score": r.score,
             "chunk_index": r.chunk_index,
+            "source": r.source,
         }
         for r in results
     ]

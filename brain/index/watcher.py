@@ -11,16 +11,16 @@ from .indexer import Indexer
 
 console = Console()
 
-# Wait this long after the last change to a file before indexing it.
-# Prevents triggering mid-save (e.g. while Word is still writing the file).
+# Пауза после последнего изменения перед индексацией: защита от
+# индексации недописанного файла (Word и т.п. пишут не атомарно).
 _DEBOUNCE_SECONDS = 2.0
 
 
 class _DebouncedHandler(FileSystemEventHandler):
     """
-    Reacts to file create/modify events for supported extensions.
-    Debounces rapid repeated events on the same file (common during
-    saves) by waiting for a quiet period before actually indexing.
+    Реагирует на create/modify/move/delete файлов с поддерживаемыми расширениями.
+    Серия событий подряд по одному файлу схлопывается в одну индексацию —
+    ждём тихого периода _DEBOUNCE_SECONDS.
     """
 
     def __init__(self, indexer: Indexer):
@@ -33,6 +33,28 @@ class _DebouncedHandler(FileSystemEventHandler):
 
     def on_modified(self, event):
         self._handle_event(event)
+
+    def on_moved(self, event):
+        # Старое имя убираем из индекса, новое планируем на индексацию
+        self._remove(Path(event.src_path))
+        if event.is_directory:
+            return
+        dest = Path(event.dest_path)
+        if dest.suffix.lower() in SUPPORTED_EXTENSIONS:
+            self._schedule_debounced_index(dest)
+
+    def on_deleted(self, event):
+        self._remove(Path(event.src_path))
+
+    def _remove(self, path: Path) -> None:
+        if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
+            return
+        console.print(f"[dim]Удалён:[/dim] {path.name}", end=" ")
+        try:
+            self._indexer.remove_file(path)
+            console.print("[green]убран из индекса[/green]")
+        except Exception as e:
+            console.print(f"[red]failed: {e}[/red]")
 
     def _handle_event(self, event):
         if event.is_directory:
@@ -64,31 +86,31 @@ class _DebouncedHandler(FileSystemEventHandler):
             self._pending_timers.pop(str(path), None)
 
         if not path.exists():
-            return  # file was deleted/moved before the debounce fired
+            return  # файл успели удалить/переместить до срабатывания таймера
 
-        console.print(f"[dim]Change detected:[/dim] {path.name}", end=" ")
+        console.print(f"[dim]Изменение:[/dim] {path.name}", end=" ")
         try:
             self._indexer.index_file(path)
-            console.print("[green]re-indexed[/green]")
+            console.print("[green]переиндексирован[/green]")
         except Exception as e:
             console.print(f"[red]failed: {e}[/red]")
 
 
 class Watcher:
-    """Watches a folder recursively and keeps the index in sync automatically."""
+    """Рекурсивно следит за папкой и держит индекс синхронизированным."""
 
     def __init__(self, indexer: Indexer | None = None):
         self._indexer = indexer or Indexer()
         self._observer = Observer()
 
     def watch(self, folder: Path) -> None:
-        """Block and watch `folder` for changes until interrupted (Ctrl+C)."""
+        """Блокирующий цикл наблюдения до Ctrl+C."""
         handler = _DebouncedHandler(self._indexer)
         self._observer.schedule(handler, str(folder), recursive=True)
         self._observer.start()
 
         console.print(
-            f"[bold]Watching[/bold] {folder} for changes... (Ctrl+C to stop)"
+            f"[bold]Наблюдение[/bold] за {folder}... (Ctrl+C — остановить)"
         )
 
         try:
@@ -96,5 +118,5 @@ class Watcher:
                 time.sleep(1)
         except KeyboardInterrupt:
             self._observer.stop()
-            console.print("\n[dim]Watcher stopped.[/dim]")
+            console.print("\n[dim]Наблюдение остановлено.[/dim]")
         self._observer.join()

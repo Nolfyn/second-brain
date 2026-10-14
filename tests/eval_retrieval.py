@@ -74,10 +74,13 @@ def compute_metrics(cases: list[dict]) -> dict:
     }
 
 
-def build_retriever(workdir: Path, with_expansion: bool):
+def build_retriever(
+    workdir: Path, with_expansion: bool, with_rerank: bool = False
+):
     """Индексирует корпус во временное хранилище и собирает ретривер."""
     from brain.index import Embedder, VectorStore, DocumentStore, Indexer
     from brain.search.retriever import Retriever
+    from brain.search.reranker import Reranker
 
     embedder = Embedder()
     document_store = DocumentStore(str(workdir / "eval.db"))
@@ -96,6 +99,7 @@ def build_retriever(workdir: Path, with_expansion: bool):
         embedder=embedder,
         vector_store=VectorStore(str(workdir / "chroma")),
         document_store=document_store,
+        reranker=Reranker() if with_rerank else None,
     )
 
 
@@ -103,6 +107,7 @@ def run(
     queries_path: Path,
     corpus: Path,
     with_expansion: bool = False,
+    with_rerank: bool = False,
 ) -> tuple[list[dict], dict]:
     """Возвращает (отчёты по кейсам, сводные метрики)."""
     global FIXTURE_CORPUS
@@ -121,7 +126,7 @@ def run(
         old_cwd = os.getcwd()
         os.chdir(workdir)
         try:
-            retriever = build_retriever(workdir, with_expansion)
+            retriever = build_retriever(workdir, with_expansion, with_rerank)
             reports = [
                 evaluate_case(retriever.retrieve(c["query"]), c) for c in cases
             ]
@@ -146,9 +151,16 @@ def main() -> int:
         action="store_true",
         help="включить LLM-расширение запроса (требует запущенный Ollama)",
     )
+    parser.add_argument(
+        "--with-rerank",
+        action="store_true",
+        help="включить cross-encoder реранк (скачивает модель при первом запуске)",
+    )
     args = parser.parse_args()
 
-    reports, metrics = run(args.queries, args.corpus, args.with_expansion)
+    reports, metrics = run(
+        args.queries, args.corpus, args.with_expansion, args.with_rerank
+    )
 
     for r in reports:
         mark = "PASS" if r["status"] == "PASS" else "FAIL"

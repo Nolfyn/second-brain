@@ -94,7 +94,7 @@ def _map_reduce_synthesise(
         high_rel_indices = {
             c.get("chunk_index", -1)
             for c in file_chunks
-            if c.get("score", 0) >= 0.90
+            if c.get("source") == "keyword"
         }
 
         if high_rel_indices:
@@ -117,6 +117,7 @@ def _map_reduce_synthesise(
                 c
                 for c in file_chunks
                 if c.get("chunk_index", -1) not in included_indices
+                and c.get("source") == "semantic"
                 and c.get("score", 0) >= 0.45
             ]
             map_chunks = (
