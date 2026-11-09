@@ -1,15 +1,20 @@
 import hashlib
-from datetime import datetime
+import logging
+import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import create_engine, Column, String, Integer, DateTime, Text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
+import brain.config as config
+
 Base = declarative_base()
+log = logging.getLogger(__name__)
 
 
 class FileRecord(Base):
-    """Tracks one indexed file and its checksum, for incremental re-indexing."""
+    """Один проиндексированный файл и его контрольная сумма."""
 
     __tablename__ = "files"
 
@@ -17,36 +22,69 @@ class FileRecord(Base):
     file_type = Column(String, nullable=False)
     checksum = Column(String, nullable=False)
     chunk_count = Column(Integer, default=0)
-    indexed_at = Column(DateTime, default=datetime.utcnow)
+    indexed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class ChunkRecord(Base):
-    """Stores the raw text of each chunk, for display/debugging purposes."""
+    """Сырой текст чанка - для keyword-поиска и отладки."""
 
     __tablename__ = "chunks"
 
     chunk_id = Column(
         String, primary_key=True
-    )  # f"{file_path}::{chunk_index}"
+    )
     file_path = Column(String, nullable=False)
     chunk_index = Column(Integer, nullable=False)
     raw_text = Column(Text, nullable=False)
+    section = Column(String, nullable=True)  # заголовок секции, если был
+
+
+class FileTerm(Base):
+    """Термин файла для частотной фильтрации: df(term) = число файлов с ним."""
+
+    __tablename__ = "file_terms"
+
+    file_path = Column(String, primary_key=True)
+    term = Column(String, primary_key=True)
+
+
+_WORD_PATTERN = re.compile(r"[a-zа-яё]{3,}")
+# Термин считается общим для корпуса, если встречается минимум в 3 файлах
+# и в доле файлов не ниже порога
+_CORPUS_COMMON_MIN_FILES = 3
+_CORPUS_COMMON_RATIO = 0.15
+
+
+def _terms_of(text: str) -> set[str]:
+    return set(_WORD_PATTERN.findall(text.lower()))
 
 
 class DocumentStore:
-    """
-    SQLite-backed store for file checksums and chunk text.
-    The checksum lets the indexer skip files that haven't changed
-    since the last run.
-    """
+    """SQLite-хранилище: чек-суммы файлов, тексты чанков, частоты терминов."""
 
-    def __init__(self, db_path: str = "second_brain.db"):
-        self._engine = create_engine(f"sqlite:///{db_path}")
+    def __init__(self, db_path: str | None = None):
+        path = db_path or str(config.sqlite_path())
+        self._engine = create_engine(f"sqlite:///{path}")
         Base.metadata.create_all(self._engine)
+        self._migrate()
         self._Session = sessionmaker(bind=self._engine)
 
+    def _migrate(self) -> None:
+        """Добавляет колонки, появившиеся после создания старой БД."""
+        from sqlalchemy import text
+
+        with self._engine.begin() as conn:
+            columns = {
+                row[1]
+                for row in conn.execute(text("PRAGMA table_info(chunks)"))
+            }
+            if "section" not in columns:
+                conn.execute(
+                    text("ALTER TABLE chunks ADD COLUMN section VARCHAR")
+                )
+
     def compute_checksum(self, path: Path) -> str:
-        """MD5 checksum of file contents — fast and sufficient for change detection."""
+        """MD5 содержимого файла - достаточно для выявления изменений."""
         hasher = hashlib.md5()
         with open(path, "rb") as f:
             for block in iter(lambda: f.read(65536), b""):
@@ -54,21 +92,20 @@ class DocumentStore:
         return hasher.hexdigest()
 
     def needs_reindex(self, path: Path) -> bool:
-        """True if the file is new or has changed since last indexed."""
+        """True, если файл новый или менялся с прошлой индексации."""
         session = self._Session()
         try:
             record = session.get(FileRecord, str(path))
             if record is None:
                 return True
-            current_checksum = self.compute_checksum(path)
-            return current_checksum != record.checksum
+            return self.compute_checksum(path) != record.checksum
         finally:
             session.close()
 
     def record_file(
         self, path: Path, file_type: str, chunk_count: int
     ) -> None:
-        """Upsert the file's checksum record after successful indexing."""
+        """Upsert записи файла после успешной индексации."""
         session = self._Session()
         try:
             checksum = self.compute_checksum(path)
@@ -79,76 +116,124 @@ class DocumentStore:
             record.file_type = file_type
             record.checksum = checksum
             record.chunk_count = chunk_count
-            record.indexed_at = datetime.utcnow()
+            record.indexed_at = datetime.now(timezone.utc)
             session.commit()
         finally:
             session.close()
 
     def save_chunks(
-        self, file_path: str, chunks: list[tuple[int, str]]
+        self, file_path: str, chunks: list[tuple]
     ) -> None:
-        """Save raw chunk text. chunks is a list of (chunk_index, text) tuples."""
+        """Сохраняет тексты чанков и пересобирает термины файла."""
         session = self._Session()
         try:
-            # Remove old chunks for this file first (in case chunk count changed)
             session.query(ChunkRecord).filter_by(file_path=file_path).delete()
-            for chunk_index, text in chunks:
-                chunk_id = f"{file_path}::{chunk_index}"
+            file_terms: set[str] = set()
+            for item in chunks:
+                chunk_index, text = item[0], item[1]
+                section = item[2] if len(item) > 2 else None
                 session.add(
                     ChunkRecord(
-                        chunk_id=chunk_id,
+                        chunk_id=f"{file_path}::{chunk_index}",
                         file_path=file_path,
                         chunk_index=chunk_index,
                         raw_text=text,
+                        section=section,
                     )
                 )
+                file_terms |= _terms_of(text)
+            session.query(FileTerm).filter_by(file_path=file_path).delete()
+            session.add_all(
+                FileTerm(file_path=file_path, term=t) for t in file_terms
+            )
             session.commit()
         finally:
             session.close()
 
-    def expand_with_neighbours(
-        self, chunks: list[ChunkRecord], window: int = 1
-    ) -> list[ChunkRecord]:
-        """
-        For each chunk, also fetch up to `window` chunks before and after it
-        in the same file. This ensures that content straddling a chunk boundary
-        (e.g. a URL at the end of chunk N and its note at the start of chunk N+1)
-        is always returned together.
-
-        Returns a flat deduplicated list; does not re-sort (caller sorts).
-        """
-        if not chunks:
-            return []
-
+    def find_files_matching(self, substring: str) -> list[str]:
+        """Пути файлов, содержащих подстроку (регистронезависимо)."""
         session = self._Session()
         try:
-            result_map: dict[tuple, ChunkRecord] = {}
+            pattern = f"%{substring.lower()}%"
+            rows = (
+                session.query(FileRecord.file_path)
+                .filter(FileRecord.file_path.ilike(pattern))
+                .all()
+            )
+            return [r[0] for r in rows]
+        finally:
+            session.close()
 
-            for chunk in chunks:
-                for offset in range(-window, window + 1):
-                    target_index = chunk.chunk_index + offset
-                    if target_index < 0:
-                        continue
-                    key = (chunk.file_path, target_index)
-                    if key in result_map:
-                        continue
-                    neighbour = (
-                        session.query(ChunkRecord)
-                        .filter_by(
-                            file_path=chunk.file_path, chunk_index=target_index
-                        )
-                        .first()
-                    )
-                    if neighbour:
-                        result_map[key] = neighbour
-
+    def get_chunks_for_paths(
+        self, file_paths: list[str]
+    ) -> list[ChunkRecord]:
+        """Все чанки указанных файлов, упорядоченные по файлу и индексу."""
+        if not file_paths:
+            return []
+        session = self._Session()
+        try:
+            chunks = (
+                session.query(ChunkRecord)
+                .filter(ChunkRecord.file_path.in_(file_paths))
+                .order_by(ChunkRecord.file_path, ChunkRecord.chunk_index)
+                .all()
+            )
             session.expunge_all()
-            return list(result_map.values())
+            return chunks
+        finally:
+            session.close()
+
+    def prune_missing(self) -> list[str]:
+        """Удаляет записи файлов, которых больше нет на диске.
+        Возвращает удалённые пути.
+        """
+        session = self._Session()
+        try:
+            missing = [
+                r.file_path
+                for r in session.query(FileRecord).all()
+                if not Path(r.file_path).exists()
+            ]
+            for path in missing:
+                session.query(ChunkRecord).filter_by(file_path=path).delete()
+                session.query(FileTerm).filter_by(file_path=path).delete()
+                session.query(FileRecord).filter_by(file_path=path).delete()
+            session.commit()
+            return missing
+        finally:
+            session.close()
+
+    def delete_records(self, file_path: str) -> None:
+        """Удаляет все записи файла: чанки, термины, метаданные."""
+        session = self._Session()
+        try:
+            session.query(ChunkRecord).filter_by(file_path=file_path).delete()
+            session.query(FileTerm).filter_by(file_path=file_path).delete()
+            session.query(FileRecord).filter_by(file_path=file_path).delete()
+            session.commit()
+        finally:
+            session.close()
+
+    def is_corpus_common(self, term: str) -> bool:
+        """True, если термин встречается в значимой доле корпуса."""
+        session = self._Session()
+        try:
+            df = (
+                session.query(FileTerm)
+                .filter_by(term=term.lower())
+                .count()
+            )
+            if df < _CORPUS_COMMON_MIN_FILES:
+                return False
+            total = session.query(FileRecord).count()
+            return df >= max(
+                _CORPUS_COMMON_MIN_FILES, total * _CORPUS_COMMON_RATIO
+            )
         finally:
             session.close()
 
     def list_file_paths(self) -> list[str]:
-        """Return all indexed file paths -- used to verify filename mentions in queries."""
+        """Все проиндексированные пути - для проверки упоминаний файлов."""
         session = self._Session()
         try:
             return [
@@ -160,10 +245,7 @@ class DocumentStore:
     def keyword_search_in_files(
         self, keyword: str, file_paths: list[str]
     ) -> list[ChunkRecord]:
-        """
-        Keyword search limited to specific file paths. More efficient than
-        fetching all matches and filtering when the target file set is known.
-        """
+        """Поиск подстроки в пределах заданных файлов."""
         if not file_paths:
             return []
         session = self._Session()
@@ -186,12 +268,10 @@ class DocumentStore:
     def keyword_search(
         self, keyword: str, limit: int = 30
     ) -> list[ChunkRecord]:
-        """
-        Literal substring search over raw chunk text (SQL LIKE).
-        Vector embeddings are bad at exact-match recall for things like
-        URLs, domains, codes, or proper nouns -- this is a deliberate
-        second retrieval path used alongside semantic search, not a
-        replacement for it.
+        """Поиск подстроки по текстам чанков (SQL LIKE).
+
+        Векторные эмбеддинги плохо ищут точные совпадения (URL, имена,
+        коды) - это второй, детерминированный путь поиска.
         """
         session = self._Session()
         try:
@@ -208,38 +288,119 @@ class DocumentStore:
         finally:
             session.close()
 
-    def get_chunks_for_file_matching(self, filename: str) -> list[ChunkRecord]:
+    def expand_neighbours(
+        self, chunks: list[ChunkRecord], window: int = 3
+    ) -> list[ChunkRecord]:
+        """Добавляет к попаданиям соседние чанки (±window) в том же файле.
+
+        Keyword-попадание часто сидит в одном чанке, а нужный контекст
+        (секция заметки) - в соседних. Попадания разбиваются на кластеры
+        (разрыв больше 2*window - отдельный кластер), каждый кластер -
+        одним range-запросом.
         """
-        Return all chunks for the file whose path contains `filename`
-        (case-insensitive), ordered by chunk_index. Used when a query
-        explicitly names a file -- we want complete coverage, not a
-        similarity-ranked sample, since list-style content (e.g. a log
-        of entries) can be spread thinly across many chunks.
-        """
+        if not chunks:
+            return []
+
+        # file_path -> отсортированные индексы попаданий
+        by_file: dict[str, list[int]] = {}
+        for c in chunks:
+            by_file.setdefault(c.file_path, []).append(c.chunk_index)
+
         session = self._Session()
         try:
-            all_chunks = session.query(ChunkRecord).all()
-            matching_paths = {
-                c.file_path
-                for c in all_chunks
-                if filename.lower() in c.file_path.lower()
-            }
-            if not matching_paths:
-                return []
-            results = (
-                session.query(ChunkRecord)
-                .filter(ChunkRecord.file_path.in_(matching_paths))
-                .order_by(ChunkRecord.file_path, ChunkRecord.chunk_index)
-                .all()
-            )
-            # Detach from session so callers can use these after session closes
+            result_map: dict[tuple, ChunkRecord] = {}
+            for file_path, indices in by_file.items():
+                indices.sort()
+                # кластеры: соседние попадания с маленьким разрывом -
+                # одним диапазоном, иначе выдача раздувается
+                cluster_start = indices[0]
+                prev = indices[0]
+                for idx in indices[1:] + [None]:
+                    if idx is None or idx - prev > 2 * window:
+                        found = (
+                            session.query(ChunkRecord)
+                            .filter(
+                                ChunkRecord.file_path == file_path,
+                                ChunkRecord.chunk_index
+                                >= cluster_start - window,
+                                ChunkRecord.chunk_index <= prev + window,
+                            )
+                            .all()
+                        )
+                        for c in found:
+                            result_map[(c.file_path, c.chunk_index)] = c
+                        if idx is not None:
+                            cluster_start = idx
+                    if idx is not None:
+                        prev = idx
+
             session.expunge_all()
-            return results
+            hit_keys = {(h.file_path, h.chunk_index) for h in chunks}
+            neighbours = sorted(
+                (c for k, c in result_map.items() if k not in hit_keys),
+                key=lambda c: (c.file_path, c.chunk_index),
+            )
+            return list(chunks) + neighbours
+        finally:
+            session.close()
+
+    def expand_dense_clusters(
+        self, chunks: list[ChunkRecord], window: int = 2
+    ) -> dict:
+        """Расширяет соседями только ПЛОТНЫЕ кластеры попаданий
+        (несколько попаданий рядом) - вокруг одиночного упоминания
+        контекст не тянем: это почти всегда соседние темы.
+
+        Возвращает dict: (file_path, chunk_index) -> чанк.
+        """
+        if not chunks:
+            return {}
+
+        by_file: dict[str, list[int]] = {}
+        for c in chunks:
+            by_file.setdefault(c.file_path, []).append(c.chunk_index)
+
+        session = self._Session()
+        try:
+            result_map: dict[tuple, ChunkRecord] = {}
+            for file_path, indices in by_file.items():
+                indices.sort()
+                # кластеры с разрывом <= 2*window; плотные (>= 2 попаданий)
+                # расширяем, одиночные пропускаем
+                cluster = [indices[0]]
+                clusters = []
+                for idx in indices[1:]:
+                    if idx - cluster[-1] > 2 * window:
+                        clusters.append(cluster)
+                        cluster = []
+                    cluster.append(idx)
+                clusters.append(cluster)
+
+                ranges = {
+                    i
+                    for cl in clusters
+                    if len(cl) >= 2
+                    for i in range(cl[0] - window, cl[-1] + window + 1)
+                }
+                if not ranges:
+                    continue
+                found = (
+                    session.query(ChunkRecord)
+                    .filter(
+                        ChunkRecord.file_path == file_path,
+                        ChunkRecord.chunk_index.in_(sorted(ranges)),
+                    )
+                    .all()
+                )
+                for c in found:
+                    result_map[(c.file_path, c.chunk_index)] = c
+            session.expunge_all()
+            return result_map
         finally:
             session.close()
 
     def stats(self) -> dict:
-        """Summary stats for the sidebar / CLI status display."""
+        """Сводная статистика для сайдбара и CLI."""
         session = self._Session()
         try:
             files = session.query(FileRecord).all()

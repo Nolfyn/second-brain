@@ -1,31 +1,31 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+
+from brain.sections import Section
 
 
 @dataclass
 class ParsedDocument:
-    """The output of any parser: clean text plus basic metadata."""
+    """Результат парсера: чистый текст и базовые метаданные."""
 
     file_path: str
-    file_type: str  # "docx", "doc", "pdf"
-    raw_text: str  # full extracted text, UTF-8
-    page_count: int = 0  # 0 if not applicable
+    file_type: str  # "docx", "doc", "pdf", ...
+    raw_text: str  # полный текст, UTF-8
+    page_count: int = 0  # 0, если неприменимо
+    # Структурные секции (заголовки, даты). Пустой список - структуры нет,
+    # чанкинг идёт по предложениям.
+    sections: list[Section] = field(default_factory=list)
 
 
 class BaseParser(ABC):
-    """
-    Strategy interface for all file parsers.
-    Every parser implements exactly one method: parse().
-    Adding support for a new file type = writing a new subclass.
-    """
+    """Интерфейс парсеров: ровно один метод parse()."""
 
     @abstractmethod
     def parse(self, path: Path) -> ParsedDocument:
         """
-        Extract clean UTF-8 text from the file at `path`.
-        Raises FileNotFoundError if the file does not exist.
-        Raises ValueError if the file cannot be parsed.
+        Извлекает чистый UTF-8 текст из файла.
+        FileNotFoundError - файла нет. ValueError - распарсить не удалось.
         """
         ...
 

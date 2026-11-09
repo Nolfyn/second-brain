@@ -1,8 +1,18 @@
+"""Чанкинг: разбиение предложений с учётом структурных секций.
+
+Секция - граница заметки (заголовок, дата). Чанкинг старается не резать
+секцию: мелкие секции склеиваются до целевого размера, переполненная
+секция делится по предложениям, но все её части несут её заголовок -
+так синтез потом группирует документ по смысловым частям.
+"""
+
 from dataclasses import dataclass
 
 import nltk
 
-# Download once, cached after first run
+from brain.sections import Section
+
+# Загружается один раз, дальше из кэша
 try:
     nltk.data.find("tokenizers/punkt_tab")
 except LookupError:
@@ -14,66 +24,114 @@ from nltk.tokenize import sent_tokenize
 @dataclass
 class Chunk:
     text: str
-    chunk_index: int  # position of this chunk within its source document
+    chunk_index: int  # позиция в исходном документе
+    section: str | None = None  # заголовок секции (первой, если склейка)
 
 
-# Rough token budget per chunk. We approximate tokens as ~4 chars/token,
-# which is a reasonable average across English and Russian.
-_TARGET_CHUNK_CHARS = 1600  # ~400 tokens
-_OVERLAP_CHARS = 200  # ~50 tokens
+# Оценка ~4 символа на токен - средняя для русского и английского
+_TARGET_CHUNK_CHARS = 1600  # ~400 токенов
+_OVERLAP_CHARS = 200  # ~50 токенов
 
 
-def chunk_text(text: str) -> list[Chunk]:
-    """
-    Split text into overlapping chunks along sentence boundaries.
-    Never cuts a sentence in half. Each chunk overlaps the previous
-    one by roughly _OVERLAP_CHARS so ideas spanning a boundary aren't lost.
-    """
+def chunk_text(
+    text: str, sections: list[Section] | None = None
+) -> list[Chunk]:
+    """Разбивает текст на чанки. Секции не режутся, если помещаются целиком."""
+    if sections is not None:
+        return _chunk_by_sections(sections)
+
     text = text.strip()
     if not text:
         return []
-
     sentences = _split_sentences(text)
     if not sentences:
         return []
+    return _pack_sentences(sentences)
 
+
+def _chunk_by_sections(sections: list[Section]) -> list[Chunk]:
     chunks: list[Chunk] = []
-    current_sentences: list[str] = []
+    pending: list[str] = []
+    pending_len = 0
+    pending_title: str | None = None
+
+    def flush() -> None:
+        nonlocal pending, pending_len, pending_title
+        if pending:
+            chunks.append(
+                Chunk(
+                    text=" ".join(pending),
+                    chunk_index=len(chunks),
+                    section=pending_title or "",
+                )
+            )
+            pending, pending_len, pending_title = [], 0, None
+
+    for section in sections:
+        body = section.text.strip()
+        if not body:
+            continue
+        if len(body) > _TARGET_CHUNK_CHARS:
+            flush()
+            for part in _split_oversized(body):
+                chunks.append(
+                    Chunk(
+                        text=part,
+                        chunk_index=len(chunks),
+                        section=section.title or "",
+                    )
+                )
+            continue
+        if pending and pending_len + len(body) > _TARGET_CHUNK_CHARS:
+            flush()
+        if not pending:
+            pending_title = section.title
+        pending.append(body)
+        pending_len += len(body) + 1
+
+    flush()
+    return chunks
+
+
+def _split_oversized(text: str) -> list[str]:
+    """Переполненная секция делится по предложениям как обычный текст."""
+    sentences = _split_sentences(text)
+    if not sentences:
+        return [text]
+    return [c.text for c in _pack_sentences(sentences)]
+
+
+def _pack_sentences(sentences: list[str]) -> list[Chunk]:
+    chunks: list[Chunk] = []
+    current: list[str] = []
     current_len = 0
 
     for sentence in sentences:
         sentence_len = len(sentence)
-
         if (
             current_len + sentence_len > _TARGET_CHUNK_CHARS
-            and current_sentences
+            and current
         ):
-            # Flush the current chunk
-            chunk_str = " ".join(current_sentences)
-            chunks.append(Chunk(text=chunk_str, chunk_index=len(chunks)))
-
-            # Start the next chunk with overlap: carry over trailing
-            # sentences from the end of the previous chunk
-            current_sentences = _take_overlap(current_sentences)
-            current_len = sum(len(s) for s in current_sentences)
-
-        current_sentences.append(sentence)
+            chunks.append(
+                Chunk(
+                    text=" ".join(current),
+                    chunk_index=len(chunks),
+                )
+            )
+            current = _take_overlap(current)
+            current_len = sum(len(s) for s in current)
+        current.append(sentence)
         current_len += sentence_len
 
-    # Flush the final chunk
-    if current_sentences:
-        chunk_str = " ".join(current_sentences)
-        chunks.append(Chunk(text=chunk_str, chunk_index=len(chunks)))
-
+    if current:
+        chunks.append(
+            Chunk(text=" ".join(current), chunk_index=len(chunks))
+        )
     return chunks
 
 
 def _split_sentences(text: str) -> list[str]:
-    """
-    Split into sentences. nltk's punkt tokenizer handles both
-    English and Russian punctuation conventions reasonably well.
-    Falls back to paragraph splitting if nltk fails for any reason.
-    """
+    """nltk punkt нормально работает и с русской, и с английской пунктуацией."""
     try:
         return [s.strip() for s in sent_tokenize(text) if s.strip()]
     except Exception:
@@ -81,7 +139,7 @@ def _split_sentences(text: str) -> list[str]:
 
 
 def _take_overlap(sentences: list[str]) -> list[str]:
-    """Return the trailing sentences that fit within the overlap budget."""
+    """Хвостовые предложения предыдущего чанка в бюджете перекрытия."""
     overlap: list[str] = []
     total = 0
     for sentence in reversed(sentences):

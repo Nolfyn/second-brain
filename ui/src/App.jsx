@@ -5,10 +5,8 @@ import ChatInput from "./components/ChatInput";
 
 export default function App() {
   const [messages, setMessages] = useState([]);
-  const [webSearch, setWebSearch] = useState(false);
-  const [agentMode, setAgentMode] = useState(false);
-  const [filter, setFilter] = useState("all");
-  const [recentQueries, setRecentQueries] = useState([]);
+  const [sessionId, setSessionId] = useState(null);
+  const [sessions, setSessions] = useState([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState(null);
   const scrollRef = useRef(null);
@@ -18,27 +16,76 @@ export default function App() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
+  async function refreshSessions() {
+    try {
+      const r = await fetch("/api/sessions");
+      if (r.ok) setSessions(await r.json());
+    } catch {
+      /* backend недоступен - список не критичен */
+    }
+  }
+
+  useEffect(() => {
+    refreshSessions();
+  }, []);
+
+  async function ensureSession() {
+    if (sessionId) return sessionId;
+    const r = await fetch("/api/sessions", { method: "POST" });
+    const { id } = await r.json();
+    setSessionId(id);
+    refreshSessions();
+    return id;
+  }
+
+  async function loadSession(id) {
+    if (isSendingRef.current) return;
+    const r = await fetch(`/api/sessions/${id}`);
+    if (!r.ok) return;
+    const session = await r.json();
+    setSessionId(id);
+    setMessages(
+      session.messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+        sources: m.sources || null,
+        isStreaming: false,
+      }))
+    );
+    setError(null);
+  }
+
+  function newChat() {
+    if (isSendingRef.current) return;
+    setSessionId(null);
+    setMessages([]);
+    setError(null);
+  }
+
+  async function deleteSession(id) {
+    await fetch(`/api/sessions/${id}`, { method: "DELETE" });
+    if (id === sessionId) newChat();
+    refreshSessions();
+  }
+
   async function handleSend(query) {
     if (isSendingRef.current) return;
     isSendingRef.current = true;
     setError(null);
 
     setMessages((prev) => [...prev, { role: "user", content: query }]);
-    setRecentQueries((prev) => [query, ...prev.filter((q) => q !== query)].slice(0, 8));
     setIsStreaming(true);
     setMessages((prev) => [
       ...prev,
-      { role: "ai", content: "", sources: null, toolActivity: [], isStreaming: true },
+      { role: "ai", content: "", sources: null, isStreaming: true },
     ]);
 
     try {
-      const endpoint = agentMode ? "/api/agent" : "/api/ask";
-      const body = agentMode ? { query } : { query, web_search: webSearch };
-
-      const response = await fetch(endpoint, {
+      const sid = await ensureSession();
+      const response = await fetch(`/api/sessions/${sid}/ask`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ query }),
       });
 
       if (!response.ok || !response.body) throw new Error(`${response.status}`);
@@ -62,17 +109,7 @@ export default function App() {
           if (event.type === "sources") {
             setMessages((prev) =>
               prev.map((m, idx) =>
-                idx === prev.length - 1
-                  ? { ...m, sources: { local: event.local, web: event.web } }
-                  : m
-              )
-            );
-          } else if (event.type === "tool_call") {
-            setMessages((prev) =>
-              prev.map((m, idx) =>
-                idx === prev.length - 1
-                  ? { ...m, toolActivity: [...(m.toolActivity || []), event] }
-                  : m
+                idx === prev.length - 1 ? { ...m, sources: event.local } : m
               )
             );
           } else if (event.type === "token") {
@@ -86,8 +123,9 @@ export default function App() {
           }
         }
       }
+      refreshSessions();
     } catch {
-      setError("Can't reach the backend. Is the server running?");
+      setError("Не удаётся связаться с бэкендом. Сервер запущен?");
     } finally {
       isSendingRef.current = false;
       setIsStreaming(false);
@@ -100,25 +138,19 @@ export default function App() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-base text-primary">
       <Sidebar
-        activeFilter={filter}
-        onFilterChange={setFilter}
-        recentQueries={recentQueries}
-        onSelectRecent={handleSend}
+        sessions={sessions}
+        activeSessionId={sessionId}
+        onSelectSession={loadSession}
+        onNewChat={newChat}
+        onDeleteSession={deleteSession}
       />
 
       <div className="flex flex-1 flex-col min-w-0">
         {/* Header */}
         <header className="flex items-center justify-between border-b border-border px-6 py-3.5 flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <span className="text-[15px] font-semibold tracking-tight text-primary">Second Brain</span>
-            {agentMode && (
-              <span className="rounded-full bg-accent-glow border border-accent-dim px-2.5 py-0.5 text-[11px] font-medium text-accent">
-                Agent
-              </span>
-            )}
-          </div>
+          <span className="text-[15px] font-semibold tracking-tight text-primary">Second Brain</span>
           <span className="text-[12px] text-muted hidden sm:block">
-            {isStreaming ? "Thinking…" : "Ready"}
+            {isStreaming ? "Думает…" : "Готово"}
           </span>
         </header>
 
@@ -127,12 +159,12 @@ export default function App() {
           {messages.length === 0 ? (
             <div className="mx-auto max-w-lg pt-24 text-center">
               <p className="text-[22px] font-semibold tracking-tight text-primary mb-2">
-                What do you want to know?
+                О чём спросить?
               </p>
               <p className="text-[14px] text-secondary leading-relaxed">
-                Ask anything about your notes and documents.
+                Спроси что угодно о своих заметках и документах.
                 <br />
-                Run <code className="rounded bg-elevated px-1.5 py-0.5 text-[12px] text-accent">brain index</code> first if you haven't already.
+                Сначала запусти <code className="rounded bg-elevated px-1.5 py-0.5 text-[12px] text-accent">brain index</code>, если ещё этого не делал.
               </p>
             </div>
           ) : (
@@ -143,7 +175,6 @@ export default function App() {
                   role={m.role}
                   content={m.content}
                   sources={m.sources}
-                  toolActivity={m.toolActivity}
                   isStreaming={m.isStreaming}
                 />
               ))}
@@ -159,14 +190,7 @@ export default function App() {
 
         {/* Input */}
         <div className="mx-auto w-full max-w-chat flex-shrink-0">
-          <ChatInput
-            onSend={handleSend}
-            webSearch={webSearch}
-            onToggleWebSearch={() => setWebSearch((v) => !v)}
-            agentMode={agentMode}
-            onToggleAgent={() => setAgentMode((v) => !v)}
-            disabled={isStreaming}
-          />
+          <ChatInput onSend={handleSend} disabled={isStreaming} />
         </div>
       </div>
     </div>

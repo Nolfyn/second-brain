@@ -1,20 +1,14 @@
 """
-Query language detection for system prompt injection.
-
-Uses direct Unicode range checks rather than a probabilistic library
-(langdetect), which is unreliable on short queries containing URLs,
-filenames, quoted phrases, and technical terms.
-
-Strategy: if the query contains Cyrillic characters -> Russian.
-Otherwise -> English.
+Определение языка запроса для предотвращения внедрения системных инструкций
+(system prompt injection). Используется прямая проверка символов Unicode.
 """
 
 
 def detect_language(text: str) -> str:
     """
-    Detect query language via Unicode character ranges.
-    Returns 'Russian' if the text contains Cyrillic characters,
-    'English' otherwise.
+    Определяет язык запроса на основе диапазонов символов Unicode.
+    Возвращает 'Russian', если текст содержит кириллические символы,
+    в противном случае - 'English'.
     """
     for char in text:
         cp = ord(char)
@@ -26,8 +20,9 @@ def detect_language(text: str) -> str:
 
 def language_instruction(query: str) -> str:
     """
-    Return a concrete language instruction to prepend to any system prompt.
-    Placed first so it has maximum weight before all other rules.
+    Возвращает языковую инструкцию, которую нужно добавить в начало любого
+    системного промпта. Она размещается первой, чтобы иметь максимальный
+    приоритет по сравнению со всеми остальными правилами.
     """
     lang = detect_language(query)
     return (

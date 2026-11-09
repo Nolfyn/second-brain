@@ -1,13 +1,12 @@
 import { useEffect, useState } from "react";
 
-const FILTERS = [
-  { key: "all",  label: "All sources" },
-  { key: "pdf",  label: "PDFs" },
-  { key: "docx", label: "Word docs" },
-  { key: "web",  label: "Web" },
-];
-
-export default function Sidebar({ activeFilter, onFilterChange, recentQueries, onSelectRecent }) {
+export default function Sidebar({
+  sessions,
+  activeSessionId,
+  onSelectSession,
+  onNewChat,
+  onDeleteSession,
+}) {
   const [stats, setStats] = useState(null);
 
   useEffect(() => {
@@ -19,51 +18,58 @@ export default function Sidebar({ activeFilter, onFilterChange, recentQueries, o
 
   return (
     <aside className="flex h-full w-[260px] flex-shrink-0 flex-col border-r border-border bg-surface">
-      <div className="px-4 pt-5 pb-4 border-b border-border">
-        <p className="text-[10px] font-semibold tracking-widest uppercase text-muted mb-3">Sources</p>
-        {FILTERS.map((f) => (
-          <button
-            key={f.key}
-            onClick={() => onFilterChange(f.key)}
-            className={`w-full text-left px-3 py-2 rounded-lg text-[13px] mb-0.5 transition-colors ${
-              activeFilter === f.key
-                ? "bg-accent-glow text-accent font-medium"
-                : "text-secondary hover:text-primary hover:bg-elevated"
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
+      <div className="px-4 pt-4 pb-2">
+        <button
+          onClick={onNewChat}
+          className="w-full rounded-lg bg-accent px-3 py-2 text-[13px] font-medium text-white transition-opacity hover:opacity-90"
+        >
+          + Новый чат
+        </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4">
-        <p className="text-[10px] font-semibold tracking-widest uppercase text-muted mb-3">Recent</p>
-        {recentQueries.length === 0 ? (
-          <p className="text-[12px] text-muted px-1">Questions appear here</p>
+      <div className="flex-1 overflow-y-auto px-4 py-2">
+        <p className="text-[10px] font-semibold tracking-widest uppercase text-muted mb-2 px-1">Чаты</p>
+        {sessions.length === 0 ? (
+          <p className="text-[12px] text-muted px-1">Чаты появятся после первого вопроса</p>
         ) : (
-          recentQueries.map((q, i) => (
-            <button
-              key={i}
-              onClick={() => onSelectRecent(q)}
-              className="block w-full text-left px-3 py-1.5 rounded-lg text-[12.5px] text-secondary hover:text-primary hover:bg-elevated truncate transition-colors"
-              title={q}
+          sessions.map((s) => (
+            <div
+              key={s.id}
+              className={`group flex items-center rounded-lg mb-0.5 transition-colors ${
+                activeSessionId === s.id ? "bg-accent-glow" : "hover:bg-elevated"
+              }`}
             >
-              {q}
-            </button>
+              <button
+                onClick={() => onSelectSession(s.id)}
+                className={`min-w-0 flex-1 text-left px-3 py-1.5 text-[12.5px] truncate ${
+                  activeSessionId === s.id ? "text-accent font-medium" : "text-secondary hover:text-primary"
+                }`}
+                title={s.title}
+              >
+                {s.title}
+              </button>
+              <button
+                onClick={() => onDeleteSession(s.id)}
+                className="hidden group-hover:block pr-2 text-muted hover:text-warn text-[14px] leading-none"
+                title="Удалить чат"
+              >
+                ×
+              </button>
+            </div>
           ))
         )}
       </div>
 
       {stats && (
         <div className="border-t border-border px-4 py-4">
-          <p className="text-[10px] font-semibold tracking-widest uppercase text-muted mb-2">Index</p>
+          <p className="text-[10px] font-semibold tracking-widest uppercase text-muted mb-2">Индекс</p>
           <div className="space-y-1">
             <div className="flex justify-between text-[12px]">
-              <span className="text-muted">Files</span>
+              <span className="text-muted">Файлы</span>
               <span className="text-secondary tabular-nums">{stats.total_files}</span>
             </div>
             <div className="flex justify-between text-[12px]">
-              <span className="text-muted">Chunks</span>
+              <span className="text-muted">Чанки</span>
               <span className="text-secondary tabular-nums">{stats.total_chunks?.toLocaleString()}</span>
             </div>
             {stats.by_type && Object.entries(stats.by_type).map(([type, count]) => (

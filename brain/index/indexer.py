@@ -13,21 +13,24 @@ console = Console()
 
 class Indexer:
     """
-    Orchestrates the full pipeline:
-    walk folder -> parse -> chunk -> embed -> store (vector + sqlite)
-
-    Skips files whose checksum hasn't changed since the last run.
+    Оркестрирует пайплайн: обход папки -> парсинг -> чанкинг -> эмбеддинги -> хранилища.
+    Пропускает файлы с неизменной контрольной суммой.
     """
 
-    def __init__(self):
-        self._embedder = Embedder()
-        self._vector_store = VectorStore()
-        self._document_store = DocumentStore()
+    def __init__(
+        self,
+        embedder: Embedder | None = None,
+        vector_store: VectorStore | None = None,
+        document_store: DocumentStore | None = None,
+    ):
+        self._embedder = embedder or Embedder()
+        self._vector_store = vector_store or VectorStore()
+        self._document_store = document_store or DocumentStore()
 
     def index_folder(self, folder: Path) -> dict:
         """
-        Index every supported file in folder (recursively).
-        Returns a summary dict: {"indexed": n, "skipped": n, "failed": n}
+        Индексирует все поддерживаемые файлы в папке (рекурсивно).
+        Возвращает {"indexed": n, "skipped": n, "failed": n}.
         """
         files = self._discover_files(folder)
         console.print(
@@ -62,11 +65,14 @@ class Indexer:
         return summary
 
     def index_file(self, path: Path) -> None:
-        """Index a single file: parse, chunk, embed, store."""
+        """Индексирует один файл: парсинг, чанкинг, эмбеддинги, хранилища."""
         parser = get_parser(path)
         parsed_doc = parser.parse(path)
 
-        chunks = chunk_text(parsed_doc.raw_text)
+        chunks = chunk_text(
+            parsed_doc.raw_text,
+            sections=parsed_doc.sections or None,
+        )
         if not chunks:
             raise ValueError("No text content extracted")
 
@@ -79,25 +85,30 @@ class Indexer:
                 "file_path": str(path),
                 "file_type": parsed_doc.file_type,
                 "chunk_index": c.chunk_index,
+                "section": c.section,
             }
             for c in chunks
         ]
 
-        # Remove old chunks for this file first, then add fresh ones.
-        # Important for files that changed and now have a different chunk count.
+        # Сначала удаляем старые чанки файла - важно при смене числа чанков
         self._vector_store.delete_by_file(str(path))
         self._vector_store.add(chunk_ids, texts, vectors, metadatas)
 
         self._document_store.save_chunks(
             str(path),
-            [(c.chunk_index, c.text) for c in chunks],
+            [(c.chunk_index, c.text, c.section) for c in chunks],
         )
         self._document_store.record_file(
             path, parsed_doc.file_type, len(chunks)
         )
 
+    def remove_file(self, path: Path) -> None:
+        """Убирает файл из обоих хранилищ (удаление с диска, переименование)."""
+        self._vector_store.delete_by_file(str(path))
+        self._document_store.delete_records(str(path))
+
     def _discover_files(self, folder: Path) -> list[Path]:
-        """Recursively find all files with supported extensions."""
+        """Рекурсивный поиск файлов с поддерживаемыми расширениями."""
         files = []
         for ext in SUPPORTED_EXTENSIONS:
             files.extend(folder.rglob(f"*{ext}"))
