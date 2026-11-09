@@ -11,7 +11,7 @@ from .docx_parser import DocxParser
 class DocParser(BaseParser):
     """
     Легаси .doc: конвертация в .docx через LibreOffice (headless),
-    дальше парсинг делегируется DocxParser. Конвертированный файл живёт
+    дальше парсинг делегируется DocxParser. Конвертированный файл находится
     во временной директории и удаляется сразу после парсинга.
     """
 

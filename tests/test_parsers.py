@@ -1,5 +1,5 @@
 """
-Parser tests.
+Тесты парсера.
 
 Нужные файлы в tests/fixtures/:
   sample_plain.docx       — незащищённый Word-документ с текстом
@@ -85,7 +85,7 @@ def test_docx_protected_decrypts_correctly():
 )
 def test_docx_result_is_valid_unicode():
     result = parse("sample_plain.docx")
-    # Не должен бросить исключение — все символы валидного UTF-8
+    # Не должен давать исключение - все символы валидного UTF-8
     result.raw_text.encode("utf-8")
 
 
@@ -109,7 +109,7 @@ def test_pdf_text_based_extracts_text():
     reason="fixtures/sample_scanned.pdf not found — scanned PDF required",
 )
 def test_pdf_scanned_falls_back_to_ocr():
-    # Тест медленный (OCR медленный) — это нормально
+    # Тест медленный (OCR медленный) - это нормально
     result = parse("sample_scanned.pdf")
     assert len(result.raw_text) > 10
 

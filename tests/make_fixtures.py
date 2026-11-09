@@ -3,11 +3,11 @@
     python tests/make_fixtures.py              — парсерные фикстуры + eval-корпус
     python tests/make_fixtures.py --corpus     — только eval-корпус
 
-Создаёт:
-  tests/fixtures/sample_plain.docx      — plain unprotected Word doc
-  tests/fixtures/sample_protected.docx  — password-protected Word doc
+Создает:
+  tests/fixtures/sample_plain.docx      — обычный Word doc
+  tests/fixtures/sample_protected.docx  — запароленный Word doc
   tests/fixtures/sample_text.pdf        — text-based PDF
-  tests/fixtures/corpus/                — синтетический корпус для eval harness
+  tests/fixtures/corpus/                — искусственный корпус для eval harness
 """
 
 import argparse
@@ -15,7 +15,6 @@ import os
 import sys
 from pathlib import Path
 
-# Make sure we can import from the project root
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dotenv import load_dotenv
@@ -90,7 +89,7 @@ def make_text_pdf(output: Path) -> None:
         c.save()
         print(f"Created: {output}")
     except ImportError:
-        # Фолбэк: минимальный PDF вручную (без внешних библиотек)
+        # Fallback: минимальный PDF вручную (без внешних библиотек)
         pdf_content = b"""%PDF-1.4
 1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
@@ -121,7 +120,7 @@ startxref
 
 
 def make_corpus(fixtures_dir: Path) -> None:
-    """Синтетический двуязычный корпус с известной структурой для eval."""
+    """Искусственный двуязычный корпус с известной структурой для eval."""
     from docx import Document
 
     corpus = fixtures_dir / "corpus"

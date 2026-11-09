@@ -6,7 +6,7 @@ from brain.index import DocumentStore, VectorStore, Indexer
 
 
 class FakeEmbedder:
-    """Векторы-заглушки — индексация без загрузки модели."""
+    """Векторы-заглушки - индексация без загрузки модели."""
 
     def embed(self, texts):
         return [[0.0] * 384 for _ in texts]

@@ -1,8 +1,4 @@
-"""Парсеры простых текстовых форматов: .txt, .csv, .html, .epub, .pptx.
-
-Собственные минимальные лоадеры вместо langchain/unstructured —
-без тяжёлых зависимостей и нативных бинарников.
-"""
+"""Парсеры простых текстовых форматов: .txt, .csv, .html, .epub, .pptx."""
 
 import csv
 import re
@@ -13,7 +9,7 @@ from .base import BaseParser, ParsedDocument
 
 _SUPPORTED = {".txt", ".csv", ".html", ".epub", ".pptx"}
 
-# Строка-дата — граница секции в дневниковых txt
+# Строка-дата - граница секции в дневниковых txt
 _DATE_LINE = re.compile(r"^\s*\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4}\s*[.)]?\s*$")
 
 
@@ -50,7 +46,7 @@ def _load_txt(path: Path) -> tuple[str, list[Section]]:
 
 
 def _sections_by_date_lines(text: str) -> list[Section]:
-    """Строки-даты (15.03.2017) начинают секции; без дат — пустой список."""
+    """Строки-даты (15.01.2025) начинают секции; без дат - пустой список."""
     sections: list[Section] = []
     current_title: str | None = None
     current_lines: list[str] = []
@@ -77,7 +73,6 @@ def _sections_by_date_lines(text: str) -> list[Section]:
 
 
 def _load_csv(path: Path) -> str:
-    # utf-8-sig прозрачно снимает BOM
     with open(path, encoding="utf-8-sig", newline="") as f:
         rows = [", ".join(cell.strip() for cell in row) for row in csv.reader(f)]
     return "\n".join(r for r in rows if r.strip())
@@ -113,7 +108,7 @@ def _load_epub(path: Path) -> str:
 
 
 def _load_pptx(path: Path) -> str:
-    """Слайды: заголовки, текст фигур, заметки докладчика."""
+    """Слайды: заголовки, текст фигур, заметки."""
     from pptx import Presentation
 
     prs = Presentation(str(path))

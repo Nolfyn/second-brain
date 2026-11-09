@@ -109,14 +109,14 @@ def run(
     with_expansion: bool = False,
     with_rerank: bool = False,
 ) -> tuple[list[dict], dict]:
-    """Возвращает (отчёты по кейсам, сводные метрики)."""
+    """Возвращает отчеты по кейсам и сводные метрики."""
     global FIXTURE_CORPUS
     FIXTURE_CORPUS = corpus
 
     cases = json.loads(queries_path.read_text(encoding="utf-8"))
 
     # ignore_cleanup_errors: Chroma держит mmap-дескрипторы, на Windows
-    # удаление открытых файлов падает — временный каталог не критичен
+    # удаление открытых файлов падает - временный каталог не критичен
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         workdir = Path(tmp)
         # Свой .brainignore: изолирование от конфигурации проекта
@@ -137,7 +137,7 @@ def run(
 
 
 def main() -> int:
-    # Консоль Windows по умолчанию cp1251 — фиксируем UTF-8 для вывода
+    # Консоль Windows по умолчанию cp1251 - фиксируем UTF-8 для вывода
     try:
         sys.stdout.reconfigure(encoding="utf-8")
     except AttributeError:

@@ -21,7 +21,7 @@ export default function App() {
       const r = await fetch("/api/sessions");
       if (r.ok) setSessions(await r.json());
     } catch {
-      /* backend недоступен — список не критичен */
+      /* backend недоступен - список не критичен */
     }
   }
 
@@ -125,7 +125,7 @@ export default function App() {
       }
       refreshSessions();
     } catch {
-      setError("Can't reach the backend. Is the server running?");
+      setError("Не удаётся связаться с бэкендом. Сервер запущен?");
     } finally {
       isSendingRef.current = false;
       setIsStreaming(false);
@@ -150,7 +150,7 @@ export default function App() {
         <header className="flex items-center justify-between border-b border-border px-6 py-3.5 flex-shrink-0">
           <span className="text-[15px] font-semibold tracking-tight text-primary">Second Brain</span>
           <span className="text-[12px] text-muted hidden sm:block">
-            {isStreaming ? "Thinking…" : "Ready"}
+            {isStreaming ? "Думает…" : "Готово"}
           </span>
         </header>
 
@@ -159,12 +159,12 @@ export default function App() {
           {messages.length === 0 ? (
             <div className="mx-auto max-w-lg pt-24 text-center">
               <p className="text-[22px] font-semibold tracking-tight text-primary mb-2">
-                What do you want to know?
+                О чём спросить?
               </p>
               <p className="text-[14px] text-secondary leading-relaxed">
-                Ask anything about your notes and documents.
+                Спроси что угодно о своих заметках и документах.
                 <br />
-                Run <code className="rounded bg-elevated px-1.5 py-0.5 text-[12px] text-accent">brain index</code> first if you haven't already.
+                Сначала запусти <code className="rounded bg-elevated px-1.5 py-0.5 text-[12px] text-accent">brain index</code>, если ещё этого не делал.
               </p>
             </div>
           ) : (

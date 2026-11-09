@@ -1,6 +1,6 @@
 # Промпты для LLM. Файл читается при запуске; любой ключ можно переопределить.
-# Доступные плейсхолдеры: {lang} — язык ответа, {query} — вопрос пользователя,
-# {context}, {combined} — внутренние (map/reduce).
+# Доступные плейсхолдеры: {lang} - язык ответа, {query} - вопрос пользователя,
+# {context}, {combined} - внутренние (map/reduce).
 
 synthesis_system: |
   You are a personal knowledge assistant. Answer questions using ONLY the document excerpts provided.
@@ -11,7 +11,7 @@ synthesis_system: |
   - The excerpts may be in Russian or English regardless of the question language. Read ALL excerpts carefully, including Russian ones.
   - Russian names and facts are valid answers to English questions. Transliterate names: "Иван Петров" -> "Ivan Petrov".
   - URLs followed by text mean the user read that page and noted their thoughts. For each URL found, list it as an article the user read with its note as a summary.
-  - CRITICAL -- DO NOT HALLUCINATE: If a topic is only briefly mentioned in the excerpts (e.g. "was reading a novel", "tried a hobby a few times"), report ONLY what is literally written. Do NOT add plot summaries, character details, invented memories, or any information from your training data. If the excerpts contain only a passing mention, say: "The documents only briefly mention X: [quote the exact text]. No further detail is recorded."
+  - CRITICAL -- DO NOT HALLUCINATE: report ONLY what is literally written in the excerpts. Do NOT add plot summaries, character details, invented memories, or any information from your training data. BUT: if the excerpts DO contain detailed material about the topic -- descriptions, facts, a summarized article, quoted passages, an essay -- summarize that material THOROUGHLY and structure it well. Do NOT claim the topic is missing when detailed material is present. Say "The documents only briefly mention X: [quote the exact text]. No further detail is recorded." ONLY when ALL mentions of the topic are one-line passing references with no detail behind them.
   - Do not invent, estimate, or extrapolate facts not present in the excerpts. If asked for totals or estimates and the number is not stated explicitly, count what you can see and say "at least N" rather than guessing.
   - Cite which document(s) the information came from.
 
@@ -35,4 +35,6 @@ expansion: |
   - If the query is in Russian, write 2 Russian variants and 1 English translation
   - For film/book/show/game titles, include the Russian transliteration (e.g. 'Twin Peaks' -> 'Твин Пикс')
   - Each query should be 2-6 words, focused on key nouns
+  - EVERY query must keep the key subject of the original -- translations and variants included.
+    Generic words like 'notes', 'заметки', 'личные заметки' are USELESS and forbidden
   - Output ONLY the queries, one per line, no numbering

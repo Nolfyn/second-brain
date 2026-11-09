@@ -62,14 +62,14 @@ export default function Sidebar({
 
       {stats && (
         <div className="border-t border-border px-4 py-4">
-          <p className="text-[10px] font-semibold tracking-widest uppercase text-muted mb-2">Index</p>
+          <p className="text-[10px] font-semibold tracking-widest uppercase text-muted mb-2">Индекс</p>
           <div className="space-y-1">
             <div className="flex justify-between text-[12px]">
-              <span className="text-muted">Files</span>
+              <span className="text-muted">Файлы</span>
               <span className="text-secondary tabular-nums">{stats.total_files}</span>
             </div>
             <div className="flex justify-between text-[12px]">
-              <span className="text-muted">Chunks</span>
+              <span className="text-muted">Чанки</span>
               <span className="text-secondary tabular-nums">{stats.total_chunks?.toLocaleString()}</span>
             </div>
             {stats.by_type && Object.entries(stats.by_type).map(([type, count]) => (

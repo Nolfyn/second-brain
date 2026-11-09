@@ -1,12 +1,12 @@
 from sentence_transformers import SentenceTransformer
 
 # Мультиязычная модель: 50+ языков включая русский и английский,
-# критично — кросс-языковой поиск (EN-запрос находит RU-документы и наоборот)
+# кросс-языковой поиск (RU-запрос находит EN-документы и наоборот)
 _MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
 
 
 class Embedder:
-    """Тонкая обёртка над sentence-transformers. Модель грузится один раз."""
+    """Тонкая обертка над sentence-transformers. Модель грузится один раз."""
 
     def __init__(self):
         print(f"Loading embedding model '{_MODEL_NAME}'...")

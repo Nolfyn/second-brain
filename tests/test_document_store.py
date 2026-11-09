@@ -85,5 +85,5 @@ def test_is_corpus_common_ignores_tiny_corpora(tmp_path):
     store.record_file(p, "docx", 1)
     store.save_chunks(str(p), [(0, "guitar guitar guitar")])
 
-    # один файл — порог min 3 не достигнут, слово не считается общим
+    # один файл - порог min 3 не достигнут, слово не считается общим
     assert not store.is_corpus_common("guitar")

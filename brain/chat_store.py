@@ -113,7 +113,7 @@ class ChatStore:
             session.close()
 
     def get_history(self, session_id: str, limit: int = 10) -> list[dict]:
-        """Последние limit сообщений — для контекста синтеза."""
+        """Последние лимиты сообщений - для контекста синтеза."""
         session = self._Session()
         try:
             rows = (
@@ -137,7 +137,7 @@ class ChatStore:
         content: str,
         sources: list | None = None,
     ) -> None:
-        """Сохраняет сообщение; первый вопрос задаёт заголовок сессии."""
+        """Сохраняет сообщение; первый вопрос задает заголовок сессии."""
         session = self._Session()
         try:
             s = session.get(Session, session_id)

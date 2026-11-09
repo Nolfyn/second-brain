@@ -1,9 +1,7 @@
 """Синтез ответа из найденных чанков.
 
-Для больших наборов (>20 чанков) — map-reduce: map идёт по секциям
+Для больших наборов (>20 чанков) - map-reduce: map идёт по секциям
 документов (заголовки, даты), reduce объединяет сводки в финальный ответ.
-Так длинная однотемная заметка обрабатывается целиком — модель не видит
-только начало и конец.
 """
 
 import logging
@@ -19,14 +17,15 @@ log = logging.getLogger(__name__)
 _TOKENS_PER_CHUNK = 400
 _MAP_REDUCE_TOKEN_BUDGET = 8000
 _MAP_REDUCE_MIN_CHUNKS = 10
-# Бюджет контекста одного map-вызова (символы)
-_MAP_SECTION_CHAR_BUDGET = 6000
+# Символьный бюджет одного map-вызова (~6k токенов); переполненная
+# секция делится на батчи - без потери середины
+_SECTION_BATCH_CHARS = 24000
 
 _CJK_RANGES = ((0x4E00, 0x9FFF), (0x3040, 0x30FF))
 
 
 def _stream_safe(stream) -> Generator[str, None, None]:
-    """Обрывает стрим, если модель начала генерировать CJK-мусор."""
+    """Обрывает поток, если модель начала генерировать CJK-мусор."""
     cjk_count = 0
     total = 0
     for content in stream:
@@ -49,7 +48,7 @@ def synthesise(
 ) -> Generator[str, None, None]:
     """Стримит ответ по токенам для запроса и найденных чанков.
 
-    history — прошлые сообщения чата (user/assistant), уходят в контекст.
+    history - прошлые сообщения чата (user/assistant), уходят в контекст.
     """
     lang = detect_language(query)
     estimated_tokens = len(chunks) * _TOKENS_PER_CHUNK
@@ -74,7 +73,9 @@ def synthesise(
     messages += history or []
     messages.append({"role": "user", "content": user})
 
-    stream = llm.chat(messages, stream=True)
+    # Низкая температура: фактический синтез, а не творчество -
+    # иначе 7B-модели склонны к отказам и отклонениям между прогонами
+    stream = llm.chat(messages, stream=True, temperature=0.3)
     yield from _stream_safe(stream)
 
 
@@ -93,29 +94,39 @@ def _map_reduce_synthesise(
     summaries = []
     for fname, file_chunks in _group_by_file(chunks).items():
         for section, sec_chunks in _group_by_section(fname, file_chunks).items():
-            context = f"File: {fname}\nSection: {section}\n\n"
-            budget = _MAP_SECTION_CHAR_BUDGET
-            for i, c in enumerate(sec_chunks, 1):
-                if budget <= 0:
-                    break
-                context += f"[Excerpt {i}]\n{c['text'][:budget]}\n\n"
-                budget -= len(c["text"])
-
-            user_msg = (
-                f"{context}\nQuestion: {query}\n\n"
-                f"Extract all relevant information in {lang}:"
-            )
-            try:
-                summary = llm.chat(
-                    [
-                        {"role": "system", "content": map_system},
-                        {"role": "user", "content": user_msg},
-                    ]
-                ).strip()
-                if summary and "nothing relevant" not in summary.lower():
-                    summaries.append(f"From {fname} ({section}):\n{summary}")
-            except Exception as e:
-                log.warning("map failed for %s / %s: %s", fname, section, e)
+            batches = _section_batches(sec_chunks)
+            for bi, batch in enumerate(batches):
+                label = (
+                    section
+                    if len(batches) == 1
+                    else f"{section} (часть {bi + 1})"
+                )
+                context = "".join(
+                    f"[Excerpt {i}]\n{c['text']}\n\n"
+                    for i, c in enumerate(batch, 1)
+                )
+                user_msg = (
+                    f"File: {fname}\nSection: {label}\n\n"
+                    + context
+                    + f"\nQuestion: {query}\n\n"
+                    f"Extract all relevant information in {lang}:"
+                )
+                try:
+                    summary = llm.chat(
+                        [
+                            {"role": "system", "content": map_system},
+                            {"role": "user", "content": user_msg},
+                        ],
+                        temperature=0.3,
+                    ).strip()
+                    if summary and "nothing relevant" not in summary.lower():
+                        summaries.append(
+                            f"From {fname} ({label}):\n{summary}"
+                        )
+                except Exception as e:
+                    log.warning(
+                        "map failed for %s / %s: %s", fname, label, e
+                    )
 
     if not summaries:
         yield "No relevant information was found in your documents for this query."
@@ -137,8 +148,30 @@ def _map_reduce_synthesise(
         + (history or [])
         + [{"role": "user", "content": reduce_user}],
         stream=True,
+        temperature=0.3,
     )
     yield from _stream_safe(stream)
+
+
+def _section_batches(sec_chunks: list[dict]) -> list[list[dict]]:
+    """Делит чанки секции на батчи по символьному бюджету.
+
+    Длинная секция без структуры (дневник на 60+ чанков) проходит
+    через map целиком, батч за батчом - середина не вырезается.
+    """
+    batches = []
+    current = []
+    current_len = 0
+    for c in sec_chunks:
+        if current and current_len + len(c["text"]) > _SECTION_BATCH_CHARS:
+            batches.append(current)
+            current = []
+            current_len = 0
+        current.append(c)
+        current_len += len(c["text"])
+    if current:
+        batches.append(current)
+    return batches
 
 
 def _group_by_file(chunks: list[dict]) -> dict[str, list[dict]]:

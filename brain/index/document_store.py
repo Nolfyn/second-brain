@@ -26,13 +26,13 @@ class FileRecord(Base):
 
 
 class ChunkRecord(Base):
-    """Сырой текст чанка — для keyword-поиска и отладки."""
+    """Сырой текст чанка - для keyword-поиска и отладки."""
 
     __tablename__ = "chunks"
 
     chunk_id = Column(
         String, primary_key=True
-    )  # f"{file_path}::{chunk_index}"
+    )
     file_path = Column(String, nullable=False)
     chunk_index = Column(Integer, nullable=False)
     raw_text = Column(Text, nullable=False)
@@ -49,7 +49,7 @@ class FileTerm(Base):
 
 
 _WORD_PATTERN = re.compile(r"[a-zа-яё]{3,}")
-# Термин считается корпусно-общим, если встречается минимум в 3 файлах
+# Термин считается общим для корпуса, если встречается минимум в 3 файлах
 # и в доле файлов не ниже порога
 _CORPUS_COMMON_MIN_FILES = 3
 _CORPUS_COMMON_RATIO = 0.15
@@ -84,7 +84,7 @@ class DocumentStore:
                 )
 
     def compute_checksum(self, path: Path) -> str:
-        """MD5 содержимого файла — достаточно для детекта изменений."""
+        """MD5 содержимого файла - достаточно для выявления изменений."""
         hasher = hashlib.md5()
         with open(path, "rb") as f:
             for block in iter(lambda: f.read(65536), b""):
@@ -124,10 +124,7 @@ class DocumentStore:
     def save_chunks(
         self, file_path: str, chunks: list[tuple]
     ) -> None:
-        """Сохраняет тексты чанков и пересобирает термины файла.
-
-        chunks — кортежи (chunk_index, raw_text) или (chunk_index, raw_text, section).
-        """
+        """Сохраняет тексты чанков и пересобирает термины файла."""
         session = self._Session()
         try:
             session.query(ChunkRecord).filter_by(file_path=file_path).delete()
@@ -188,8 +185,7 @@ class DocumentStore:
 
     def prune_missing(self) -> list[str]:
         """Удаляет записи файлов, которых больше нет на диске.
-
-        Возвращает удалённые пути — вызывающий чистит векторы.
+        Возвращает удалённые пути.
         """
         session = self._Session()
         try:
@@ -237,7 +233,7 @@ class DocumentStore:
             session.close()
 
     def list_file_paths(self) -> list[str]:
-        """Все проиндексированные пути — для проверки упоминаний файлов."""
+        """Все проиндексированные пути - для проверки упоминаний файлов."""
         session = self._Session()
         try:
             return [
@@ -275,7 +271,7 @@ class DocumentStore:
         """Поиск подстроки по текстам чанков (SQL LIKE).
 
         Векторные эмбеддинги плохо ищут точные совпадения (URL, имена,
-        коды) — это второй, детерминированный путь поиска.
+        коды) - это второй, детерминированный путь поиска.
         """
         session = self._Session()
         try:
@@ -289,6 +285,117 @@ class DocumentStore:
             )
             session.expunge_all()
             return results
+        finally:
+            session.close()
+
+    def expand_neighbours(
+        self, chunks: list[ChunkRecord], window: int = 3
+    ) -> list[ChunkRecord]:
+        """Добавляет к попаданиям соседние чанки (±window) в том же файле.
+
+        Keyword-попадание часто сидит в одном чанке, а нужный контекст
+        (секция заметки) - в соседних. Попадания разбиваются на кластеры
+        (разрыв больше 2*window - отдельный кластер), каждый кластер -
+        одним range-запросом.
+        """
+        if not chunks:
+            return []
+
+        # file_path -> отсортированные индексы попаданий
+        by_file: dict[str, list[int]] = {}
+        for c in chunks:
+            by_file.setdefault(c.file_path, []).append(c.chunk_index)
+
+        session = self._Session()
+        try:
+            result_map: dict[tuple, ChunkRecord] = {}
+            for file_path, indices in by_file.items():
+                indices.sort()
+                # кластеры: соседние попадания с маленьким разрывом -
+                # одним диапазоном, иначе выдача раздувается
+                cluster_start = indices[0]
+                prev = indices[0]
+                for idx in indices[1:] + [None]:
+                    if idx is None or idx - prev > 2 * window:
+                        found = (
+                            session.query(ChunkRecord)
+                            .filter(
+                                ChunkRecord.file_path == file_path,
+                                ChunkRecord.chunk_index
+                                >= cluster_start - window,
+                                ChunkRecord.chunk_index <= prev + window,
+                            )
+                            .all()
+                        )
+                        for c in found:
+                            result_map[(c.file_path, c.chunk_index)] = c
+                        if idx is not None:
+                            cluster_start = idx
+                    if idx is not None:
+                        prev = idx
+
+            session.expunge_all()
+            hit_keys = {(h.file_path, h.chunk_index) for h in chunks}
+            neighbours = sorted(
+                (c for k, c in result_map.items() if k not in hit_keys),
+                key=lambda c: (c.file_path, c.chunk_index),
+            )
+            return list(chunks) + neighbours
+        finally:
+            session.close()
+
+    def expand_dense_clusters(
+        self, chunks: list[ChunkRecord], window: int = 2
+    ) -> dict:
+        """Расширяет соседями только ПЛОТНЫЕ кластеры попаданий
+        (несколько попаданий рядом) - вокруг одиночного упоминания
+        контекст не тянем: это почти всегда соседние темы.
+
+        Возвращает dict: (file_path, chunk_index) -> чанк.
+        """
+        if not chunks:
+            return {}
+
+        by_file: dict[str, list[int]] = {}
+        for c in chunks:
+            by_file.setdefault(c.file_path, []).append(c.chunk_index)
+
+        session = self._Session()
+        try:
+            result_map: dict[tuple, ChunkRecord] = {}
+            for file_path, indices in by_file.items():
+                indices.sort()
+                # кластеры с разрывом <= 2*window; плотные (>= 2 попаданий)
+                # расширяем, одиночные пропускаем
+                cluster = [indices[0]]
+                clusters = []
+                for idx in indices[1:]:
+                    if idx - cluster[-1] > 2 * window:
+                        clusters.append(cluster)
+                        cluster = []
+                    cluster.append(idx)
+                clusters.append(cluster)
+
+                ranges = {
+                    i
+                    for cl in clusters
+                    if len(cl) >= 2
+                    for i in range(cl[0] - window, cl[-1] + window + 1)
+                }
+                if not ranges:
+                    continue
+                found = (
+                    session.query(ChunkRecord)
+                    .filter(
+                        ChunkRecord.file_path == file_path,
+                        ChunkRecord.chunk_index.in_(sorted(ranges)),
+                    )
+                    .all()
+                )
+                for c in found:
+                    result_map[(c.file_path, c.chunk_index)] = c
+            session.expunge_all()
+            return result_map
         finally:
             session.close()
 

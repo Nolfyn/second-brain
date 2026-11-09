@@ -15,7 +15,7 @@ _HEADING_STYLE = re.compile(r"^(Heading|Заголовок)\s*\d*$", re.IGNORECA
 class DocxParser(BaseParser):
     """
     Парсит .docx в plain text.
-    Парольные файлы расшифровывает через DOC_PASSWORD — в памяти,
+    Парольные файлы расшифровывает через DOC_PASSWORD - в памяти,
     без записи расшифрованного текста на диск.
     """
 
@@ -37,7 +37,7 @@ class DocxParser(BaseParser):
             raise ValueError(f"Failed to parse {path.name}: {e}") from e
 
     def _open_document(self, path: Path) -> Document:
-        """Сначала открываем как обычный docx, при неудаче — расшифровка."""
+        """Сначала открываем как обычный docx, при неудаче - расшифровка."""
         try:
             return Document(str(path))
         except Exception:
@@ -81,8 +81,8 @@ class DocxParser(BaseParser):
         return "\n\n".join(parts)
 
     def _extract_sections(self, doc: Document) -> list[Section]:
-        """Заголовки (Heading 1-3 или «Заголовок») — границы секций.
-        Без заголовков структуры нет — чанкинг пойдёт по предложениям."""
+        """Заголовки (Heading 1-3 или 'Заголовок') - границы секций.
+        Без заголовков структуры нет - чанкинг пойдёт по предложениям."""
         sections: list[Section] = []
         has_heading = False
         current_title: str | None = None

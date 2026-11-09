@@ -82,8 +82,6 @@ def test_topic_scope_none_without_trigger():
 
 
 def test_topic_scope_no_cross_language_folder_match():
-    # без словаря переводов русское слово не сматчится с английской папкой —
-    # такой запрос уходит в семантический путь
     assert (
         find_topic_scope("Сделай выводы по моим заметкам о Швеции.", INDEXED)
         is None

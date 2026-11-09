@@ -1,7 +1,7 @@
 """Переранжирование результатов мультиязычным cross-encoder'ом.
 
 Добивает слабое место двухэтапного поиска: би-энкодер (MiniLM) грубый,
-но быстрый; cross-encoder точный, но дорогой — поэтому он работает
+но быстрый; cross-encoder точный, но дорогой - поэтому он работает
 только поверх уже отобранных кандидатов.
 """
 
@@ -10,7 +10,7 @@ import threading
 
 from brain.index.vector_store import SearchResult
 
-_DEFAULT_MODEL = "cross-encoder/mmarco-mMiniLMv2-L12"
+_DEFAULT_MODEL = "BAAI/bge-reranker-v2-m3"  # мультиязычный (RU/EN), скачивается с HF при первом запуске
 
 
 class Reranker:

@@ -7,7 +7,7 @@ from rich.console import Console
 load_dotenv()
 
 app = typer.Typer(
-    help="Second Brain — поиск по личным документам с помощью ИИ."
+    help="Second Brain - поиск по личным заметкам на основе RAG."
 )
 console = Console()
 
@@ -88,7 +88,7 @@ def check(
                 console.print(f"  {preview}...\n")
             else:
                 console.print(
-                    "  [red]Чанки отсутствуют — запись о файле есть, а векторов может не быть. "
+                    "  [red]Чанки отсутствуют - запись о файле есть, а векторов может не быть. "
                     'Запустите: brain reindex "<полный путь>"[/red]\n'
                 )
     finally:
@@ -194,7 +194,7 @@ def grep(
         ..., help="Подстрока для поиска по тексту проиндексированных чанков."
     ),
 ):
-    """Поиск подстроки по индексу без LLM — для отладки retrieval."""
+    """Поиск подстроки по индексу без LLM - для отладки retrieval."""
     from brain.index import DocumentStore
 
     store = DocumentStore()
@@ -216,7 +216,6 @@ def grep(
         start = max(0, idx - 60)
         end = min(len(c.raw_text), idx + len(keyword) + 60)
         snippet = c.raw_text[start:end].replace("\n", " ")
-        # print(), а не console.print(): Rich на Windows падает на Unicode при пайпе
         print(f"  ...{snippet}...\n")
 
 

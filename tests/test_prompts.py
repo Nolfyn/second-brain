@@ -17,7 +17,7 @@ def test_default_prompts_loaded():
 
 
 def test_shipped_yaml_is_actually_loaded():
-    # Регрессия: файл brain/prompts.yaml должен реально читаться
+    # Файл brain/prompts.yaml должен реально читаться
     # (не возвращать дефолты из кода).
     text = prompts.get_prompts()["synthesis_system"]
     assert "HALLUCINATE" in text

@@ -15,7 +15,7 @@ except ImportError:
     OCR_AVAILABLE = False
 
 
-# Страница с текстом ниже этого порога в среднем — скан
+# Страница с текстом ниже этого порога в среднем - скан
 _CHARS_PER_PAGE_THRESHOLD = 100
 
 
@@ -24,8 +24,8 @@ class PdfParser(BaseParser):
     Парсинг PDF.
 
     1. pdfminer для текстовых PDF (быстро, точно).
-    2. Если символов на страницу мало — считаем PDF сканом.
-    3. Фолбэк: pytesseract OCR с русским и английским языками.
+    2. Если символов на страницу мало - считаем PDF сканом.
+    3. Fallback: pytesseract OCR с русским и английским языками.
     """
 
     def parse(self, path: Path) -> ParsedDocument:
@@ -40,7 +40,7 @@ class PdfParser(BaseParser):
 
             text = text.strip()
             if not text:
-                raise ValueError("No text could be extracted from this PDF.")
+                raise ValueError("Из этого PDF не получилось извлечь текст.")
 
             return ParsedDocument(
                 file_path=str(path),
@@ -51,7 +51,7 @@ class PdfParser(BaseParser):
         except ValueError:
             raise
         except Exception as e:
-            raise ValueError(f"Failed to parse {path.name}: {e}") from e
+            raise ValueError(f"Ошибка парсинга {path.name}: {e}") from e
 
     def _count_pages(self, path: Path) -> int:
         """Число страниц без извлечения текста."""

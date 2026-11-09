@@ -17,7 +17,7 @@ class FakeLLM:
 
 
 def _chunks():
-    """25 чанков (>20 — порог map-reduce), два файла, по две секции."""
+    """25 чанков (>20 - порог map-reduce), два файла, по две секции."""
     out = []
     for i in range(25):
         fname = "A.docx" if i < 13 else "B.docx"
@@ -72,3 +72,28 @@ def test_no_relevant_sections_yields_notice(monkeypatch):
     assert out == [
         "No relevant information was found in your documents for this query."
     ]
+
+
+def test_oversized_section_split_into_batches(monkeypatch, tmp_path):
+    """Переполненная секция делится на батчи - середина не теряется."""
+    monkeypatch.setattr(synthesiser, "_SECTION_BATCH_CHARS", 400)
+    fake = FakeLLM()
+    monkeypatch.setattr(synthesiser, "get_llm", lambda: fake)
+
+    # 25 чанков - больше порога map-reduce (>20)
+    chunks = [
+        {
+            "file_path": "C:/docs/A.docx",
+            "text": f"Часть {i}. " + "текст. " * 30,
+            "section": "Большая секция",
+            "source": "file",
+            "score": None,
+        }
+        for i in range(25)
+    ]
+    list(synthesiser.synthesise("вопрос", chunks))
+
+    assert len(fake.map_calls) == 25  # при бюджете 400 каждый чанк - свой батч
+    assert "(часть 1)" in fake.map_calls[0]
+    assert "(часть 25)" in fake.map_calls[-1]
+    assert "[... пропуск середины секции ...]" not in fake.map_calls[0]

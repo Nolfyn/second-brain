@@ -13,7 +13,7 @@ class ParsedDocument:
     file_type: str  # "docx", "doc", "pdf", ...
     raw_text: str  # полный текст, UTF-8
     page_count: int = 0  # 0, если неприменимо
-    # Структурные секции (заголовки, даты). Пустой список — структуры нет,
+    # Структурные секции (заголовки, даты). Пустой список - структуры нет,
     # чанкинг идёт по предложениям.
     sections: list[Section] = field(default_factory=list)
 
@@ -25,7 +25,7 @@ class BaseParser(ABC):
     def parse(self, path: Path) -> ParsedDocument:
         """
         Извлекает чистый UTF-8 текст из файла.
-        FileNotFoundError — файла нет. ValueError — распарсить не удалось.
+        FileNotFoundError - файла нет. ValueError - распарсить не удалось.
         """
         ...
 

@@ -37,7 +37,7 @@ export default function ChatInput({ onSend, disabled }) {
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Ask anything about your notes…"
+          placeholder="Спроси что угодно о своих заметках…"
           rows={3}
           disabled={disabled}
           className="w-full resize-none bg-transparent px-4 pt-3.5 pb-2 text-[14px] text-primary placeholder:text-muted focus:outline-none disabled:opacity-40"
@@ -50,7 +50,7 @@ export default function ChatInput({ onSend, disabled }) {
             onClick={handleSubmit}
             disabled={disabled || !value.trim()}
             className="flex h-8 w-8 items-center justify-center rounded-full bg-accent text-white transition-opacity disabled:opacity-20 hover:opacity-90"
-            aria-label="Send"
+            aria-label="Отправить"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <path d="M12 19V5M5 12l7-7 7 7" strokeLinecap="round" strokeLinejoin="round" />

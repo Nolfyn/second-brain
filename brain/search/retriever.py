@@ -6,13 +6,10 @@
 3. Год в запросе -> чанки файлов с годом в пути
 4. Тематическая папка (запросы-размышления) -> чанки .docx папки
 5. Иначе -> семантика с LLM-расширением запроса + keyword-буст сущностей
-
-Вызов с сигналом (1)-(4) детерминирован: файл запросили по имени —
-.brainignore не применяется. Если кандидатов больше порога и ретриверу
-дан reranker — выдача переранжируется cross-encoder'ом.
 """
 
 import logging
+import math
 import re
 
 import brain.config as config
@@ -20,6 +17,10 @@ from brain.index import Embedder, VectorStore, DocumentStore, SearchResult
 from brain.search import signals
 
 log = logging.getLogger(__name__)
+
+# Минимальная косинусная близость расширения к оригиналу: ниже -
+# мусор от LLM, отсекаем
+_MIN_EXPANSION_SIM = 0.4
 
 _REVIEW_WORDS = {
     "review",
@@ -37,6 +38,9 @@ _REVIEW_WORDS = {
 
 # Стемы секций итогов: такие чанки поднимаем вперёд в тематическом поиске
 _CONCLUSION_STEMS = ("вывод", "итог", "заключени", "резюм")
+# Сколько соседних чанков тянем вокруг keyword-попадания: упоминание
+# часто сидит в одном чанке, а нужная секция - рядом
+_NEIGHBOUR_WINDOW = 3
 
 
 class Retriever:
@@ -48,6 +52,8 @@ class Retriever:
     MIN_SCORE = 0.35
     SEMANTIC_TOPK = 15
     RERANK_THRESHOLD = 10
+    RERANK_FLOOR = 0.02
+    RERANK_MIN_KEEP = 8
 
     def __init__(
         self,
@@ -84,10 +90,13 @@ class Retriever:
         if kws:
             results = self._keyword_search(kws, scope_file=named_file)
             if results:
+                # Порядок прогонов намеренный (связное чтение секций) -
+                # реранк его размазал бы
                 return self._finalize(
                     query,
                     self._mark(results, "keyword"),
                     max_results=self.MAX_KEYWORD,
+                    rerank=False,
                 )
 
         if named_file:
@@ -106,8 +115,6 @@ class Retriever:
 
         if topic:
             results = self._topic_search(query, topic)
-            # Порядок topic-выдачи намеренный (секции итогов впереди) —
-            # реранк его пересортировал бы, поэтому здесь он выключен
             return self._finalize(
                 query,
                 results,
@@ -115,11 +122,52 @@ class Retriever:
                 rerank=False,
             )
 
-        return self._finalize(query, self._semantic_with_entities(query))
+        return self._finalize(
+            query, *self._semantic_with_entities_ex(query)
+        )
 
     # ------------------------------------------------------------------
     # Стратегии
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _order_in_runs(hits: list, expanded: list) -> list:
+        """Упорядочивает расширенные попадания непрерывными прогонами.
+
+        Прогон - соседние чанки одного файла; прогоны идут в порядке первого
+        попадания, внутри прогона - по chunk_index. Выдача читается связным
+        текстом: заголовок секции оказывается сразу перед её содержимым,
+        а не размазан по списку excerpts.
+        """
+        from collections import defaultdict
+
+        hit_keys = {(h.file_path, h.chunk_index) for h in hits}
+        hit_rank = {
+            k: i for i, k in enumerate(sorted(hit_keys))
+        }
+
+        by_file: dict[str, list] = defaultdict(list)
+        for c in expanded:
+            by_file[c.file_path].append(c)
+
+        runs = []
+        for path, cs in by_file.items():
+            cs.sort(key=lambda c: c.chunk_index)
+            run = [cs[0]]
+            run_rank = hit_rank.get((path, cs[0].chunk_index))
+            for c in cs[1:]:
+                if c.chunk_index > run[-1].chunk_index + 1:
+                    runs.append((run_rank, run))
+                    run = []
+                    run_rank = None
+                run.append(c)
+                r = hit_rank.get((path, c.chunk_index))
+                if run_rank is None or (r is not None and r < run_rank):
+                    run_rank = r
+            runs.append((run_rank, run))
+
+        runs.sort(key=lambda item: item[0] if item[0] is not None else 10**9)
+        return [c for _, run in runs for c in run]
 
     def _keyword_search(
         self, kws: list[str], scope_file: str | None
@@ -135,7 +183,9 @@ class Retriever:
                 ]
             chunks.extend(found)
 
-        return self._dedup_chunks(chunks)
+        unique = self._dedup_chunks(chunks)
+        expanded = self._ds.expand_neighbours(unique, window=_NEIGHBOUR_WINDOW)
+        return self._order_in_runs(unique, expanded)
 
     def _file_search(self, query: str, named_file: str) -> list[SearchResult]:
         paths = self._ds.find_files_matching(named_file)
@@ -185,6 +235,11 @@ class Retriever:
 
         docx_paths = [p for p in topic_paths if p.lower().endswith(".docx")]
 
+        # Небольшой набор: отдаем все чанки
+        all_chunks = self._ds.get_chunks_for_paths(sorted(docx_paths))
+        if 0 < len(all_chunks) <= self.MAX_FILE:
+            return self._to_results(all_chunks, "topic")
+
         vec = self._emb.embed_one(query)
         pool = self._vs.search(vec, top_k=300)
         docx_results = [
@@ -195,7 +250,7 @@ class Retriever:
         ]
 
         if docx_results:
-            # Секции итогов поднимаем вперёд — для запросов «сделай выводы»
+            # Секции итогов поднимаем вперед - для запросов типа 'сделай выводы'
             target_files = list({r.file_path for r in docx_results})
             seen = {(r.file_path, r.chunk_index) for r in docx_results}
             boosted = []
@@ -210,7 +265,60 @@ class Retriever:
         chunks = self._ds.get_chunks_for_paths(sorted(docx_paths))
         return self._to_results(chunks[: self.MAX_FILE], "topic")
 
+    @staticmethod
+    def _cluster_first_order(hits: list, expanded_map: dict) -> list:
+        """Плотные кластеры попаданий (заметки) - первыми, связным
+        прогоном по chunk_index; одиночные упоминания - после.
+
+        Плотность = число попаданий в непрерывном прогоне: кластер из
+        эссе о Швеции важнее трех разрозненных всплывших упоминаний.
+        """
+        from collections import defaultdict
+
+        pool = dict(expanded_map)
+        for h in hits:
+            pool.setdefault((h.file_path, h.chunk_index), h)
+        hit_keys = {(h.file_path, h.chunk_index) for h in hits}
+
+        by_file: dict[str, list] = defaultdict(list)
+        for c in pool.values():
+            by_file[c.file_path].append(c)
+
+        runs = []
+        for path, cs in by_file.items():
+            cs.sort(key=lambda c: c.chunk_index)
+            run = [cs[0]]
+            for c in cs[1:]:
+                if c.chunk_index > run[-1].chunk_index + 1:
+                    runs.append(run)
+                    run = []
+                run.append(c)
+            runs.append(run)
+
+        def run_rank(run):
+            n_hits = sum(
+                1
+                for c in run
+                if (c.file_path, c.chunk_index) in hit_keys
+            )
+            return (-n_hits, run[0].file_path, run[0].chunk_index)
+
+        runs.sort(key=run_rank)
+        return [c for run in runs for c in run]
+
     def _semantic_with_entities(self, query: str) -> list[SearchResult]:
+        results, _ = self._semantic_with_entities_ex(query)
+        return results
+
+    def _semantic_with_entities_ex(
+        self, query: str
+    ) -> tuple[list[SearchResult], int]:
+        """Семантика + keyword-буст сущностей.
+
+        Возвращает (результаты, число закрепленных): закрепленные
+        (keyword-кластеры) сохраняют порядок при финализации - реранкер
+        оценивает только семантический хвост.
+        """
         queries = self._expand_query(query)
         all_results: dict[tuple, SearchResult] = {}
 
@@ -243,27 +351,30 @@ class Retriever:
             kw_chunks = []
             for entity in entities:
                 hits = self._ds.keyword_search(entity, limit=200)
-                # Слишком частотные сущности режут точность — пропускаем
+                # Слишком частотные сущности режут точность - пропускаем
                 if len(hits) <= 15:
                     kw_chunks.extend(hits)
                 log.info("  entity %r: %d hits", entity, len(hits))
 
             if kw_chunks:
-                kw_results = self._mark(
-                    self._dedup_chunks(kw_chunks), "keyword"
-                )
+                unique = self._dedup_chunks(kw_chunks)
+                dense = self._ds.expand_dense_clusters(unique, window=2)
+                ordered = self._cluster_first_order(unique, dense)
+                kw_results = self._mark(ordered, "keyword")
                 kw_keys = {(r.file_path, r.chunk_index) for r in kw_results}
                 extra_sem = [
                     r
                     for r in sem
                     if (r.file_path, r.chunk_index) not in kw_keys
                 ]
-                return (kw_results + extra_sem)[: self.MAX_RESULTS]
+                return (kw_results + extra_sem)[: self.MAX_RESULTS], len(
+                    kw_results
+                )
 
-        return sem[: self.MAX_RESULTS]
+        return sem[: self.MAX_RESULTS], 0
 
     def _expand_query(self, query: str) -> list[str]:
-        """LLM-расширение запроса: кросс-языковые варианты. При сбое — as is."""
+        """LLM-расширение запроса: кросс-языковые варианты."""
         from brain.llm import get_llm
         from brain.search import prompts
 
@@ -284,33 +395,79 @@ class Retriever:
                 for line in raw.strip().split("\n")
                 if line.strip() and len(line.strip()) > 3
             ][:3]
+            extras = self._filter_expansions(query, extras)
             log.info("expanded: %s", extras)
             return [query] + extras
         except Exception as e:
             log.warning("expansion failed: %s", e)
             return [query]
 
+    def _filter_expansions(
+        self, query: str, extras: list[str]
+    ) -> list[str]:
+        """Оставляет варианты, близкие к оригиналу по косинусу."""
+        if not extras:
+            return []
+        try:
+            vectors = self._emb.embed([query] + extras)
+            origin = vectors[0]
+
+            def norm(v):
+                return math.sqrt(sum(x * x for x in v)) or 1e-9
+
+            origin_norm = norm(origin)
+            kept = []
+            for extra, vec in zip(extras, vectors[1:]):
+                cos = sum(a * b for a, b in zip(origin, vec)) / (
+                    origin_norm * norm(vec)
+                )
+                log.info("expansion sim %r: %.3f", extra, cos)
+                if cos >= _MIN_EXPANSION_SIM:
+                    kept.append(extra)
+            return kept
+        except Exception as e:
+            log.warning("expansion filter failed: %s", e)
+            return extras
+
     # ------------------------------------------------------------------
-    # Финализация: .brainignore + реранк
+    # Финализация
     # ------------------------------------------------------------------
 
     def _finalize(
         self,
         query: str,
         results: list[SearchResult],
+        pinned: int = 0,
         keep_ignored: bool = False,
         max_results: int | None = None,
         rerank: bool = True,
     ) -> list[SearchResult]:
+        """Фильтр .brainignore + реранк + обрезка.
+
+        Первые `pinned` результатов закреплены: реранкер оценивает
+        только хвост - иначе он разрывает кластеры и переставляет
+        связные прогоны.
+        """
         if not keep_ignored:
             results = self._filter_ignored(results)
         cap = max_results or self.MAX_RESULTS
-        if rerank and self._reranker and len(results) > self.RERANK_THRESHOLD:
-            results = self._reranker.rerank(query, results, top_n=cap)
-        return results[:cap]
+        head, tail = results[:pinned], results[pinned:]
+        if rerank and self._reranker and len(tail) > self.RERANK_THRESHOLD:
+            try:
+                tail = self._reranker.rerank(query, tail, top_n=cap)
+                kept = [
+                    r for r in tail if (r.score or 0) >= self.RERANK_FLOOR
+                ]
+                if len(kept) >= self.RERANK_MIN_KEEP:
+                    tail = kept
+            except Exception as e:
+                # Модель недоступна/не скачалась - выдача без реранка
+                # лучше упавшего запроса
+                log.warning("rerank failed: %s", e)
+        return (head + tail)[:cap]
 
     def _load_ignore_patterns(self) -> list[str]:
-        """Глоб-паттерны .brainignore: файлы скрыты из общей выдачи,
+        """Паттерны .brainignore: файлы скрыты из общей выдачи,
         но остаются доступны по прямому запросу имени."""
         path = config.brainignore_path()
         if not path.exists():

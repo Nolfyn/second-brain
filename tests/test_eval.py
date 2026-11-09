@@ -88,7 +88,7 @@ def test_indexer_accepts_injected_stores(tmp_path):
 
     docs = tmp_path / "docs"
     docs.mkdir()
-    (docs / "note.txt").write_text("Синтетическая заметка про яхтинг.", encoding="utf-8")
+    (docs / "note.txt").write_text("Искусственная заметка про яхтинг.", encoding="utf-8")
 
     store = DocumentStore(str(tmp_path / "eval.db"))
     indexer = Indexer(

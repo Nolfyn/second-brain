@@ -1,4 +1,4 @@
-"""Тесты reranker'а (cross-encoder — мок, без загрузки модели)."""
+"""Тесты реранкера (cross-encoder - мок, без загрузки модели)."""
 
 from unittest.mock import MagicMock, patch
 

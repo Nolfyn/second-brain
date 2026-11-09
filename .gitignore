@@ -219,6 +219,7 @@ nltk_data/
 .brainignore
 start.bat
 eval_queries.json
+.superpowers/
 
 # Frontend (Vite + React)
 ui/node_modules/

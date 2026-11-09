@@ -12,15 +12,14 @@ from .indexer import Indexer
 console = Console()
 
 # Пауза после последнего изменения перед индексацией: защита от
-# индексации недописанного файла (Word и т.п. пишут не атомарно).
+# индексации недописанного файла.
 _DEBOUNCE_SECONDS = 2.0
 
 
 class _DebouncedHandler(FileSystemEventHandler):
     """
     Реагирует на create/modify/move/delete файлов с поддерживаемыми расширениями.
-    Серия событий подряд по одному файлу схлопывается в одну индексацию —
-    ждём тихого периода _DEBOUNCE_SECONDS.
+    Серия событий подряд по одному файлу складывается в одну индексацию.
     """
 
     def __init__(self, indexer: Indexer):

@@ -1,10 +1,10 @@
 """Абстракция над провайдерами LLM.
 
 Провайдер выбирается переменной окружения LLM_PROVIDER:
-  - ollama (по умолчанию) — локальная модель, настройка через OLLAMA_MODEL;
-  - anthropic — Claude API, ключ ANTHROPIC_API_KEY, модель ANTHROPIC_MODEL;
-  - openai — любой OpenAI-совместимый endpoint (Kimi, OpenAI и др.),
-    ключ OPENAI_API_KEY, модель OPENAI_MODEL, адрес OPENAI_BASE_URL.
+  - ollama (по умолчанию) - локальная модель, настройка через OLLAMA_MODEL;
+  - anthropic - Claude API, ключ ANTHROPIC_API_KEY, модель ANTHROPIC_MODEL;
+  - openai - любой OpenAI-совместимый endpoint, ключ OPENAI_API_KEY,
+  модель OPENAI_MODEL, адрес OPENAI_BASE_URL.
 """
 
 import json
@@ -18,7 +18,7 @@ DEFAULT_NUM_PREDICT = 2048
 
 
 def get_llm() -> "BaseLLM":
-    """Создаёт клиента LLM по переменным окружения."""
+    """Создает клиента LLM по переменным окружения."""
     provider = os.getenv("LLM_PROVIDER", "ollama").lower()
     if provider == "ollama":
         return OllamaLLM(model=os.getenv("OLLAMA_MODEL", "qwen2.5:7b"))
@@ -41,7 +41,7 @@ def _require_env(name: str) -> str:
     value = os.getenv(name)
     if not value:
         raise ValueError(
-            f"Переменная окружения {name} не задана — "
+            f"Переменная окружения {name} не задана - "
             "проверьте .env (см. .env.example)"
         )
     return value
@@ -58,7 +58,7 @@ class BaseLLM:
         temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> str | Iterator[str]:
-        """Без stream=True возвращает полный текст, иначе — генератор токенов."""
+        """Без stream=True возвращает полный текст, иначе - генератор токенов."""
         raise NotImplementedError
 
 
@@ -158,7 +158,7 @@ def _split_system(messages: list[dict]) -> tuple[str, list[dict]]:
 
 
 def _iter_sse_json(lines) -> Iterator[dict]:
-    """Парсит SSE-стрим: json-пayloadы из data:-строк до маркера [DONE]."""
+    """Парсит SSE-стрим: json-payload из data:-строк до маркера [DONE]."""
     for line in lines:
         line = line.strip()
         if not line.startswith("data:"):

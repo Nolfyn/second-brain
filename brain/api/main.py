@@ -136,7 +136,7 @@ def ask_session(session_id: str, request: AskRequest):
 
 @app.get("/debug/search")
 def debug_search(q: str):
-    """Обход LLM — показывает, что именно вернул ретривер."""
+    """Обход LLM - показывает, что именно вернул ретривер."""
     results = _retriever.retrieve(q)
     return {
         "query": q,

@@ -14,7 +14,6 @@ console = Console()
 class Indexer:
     """
     Оркестрирует пайплайн: обход папки -> парсинг -> чанкинг -> эмбеддинги -> хранилища.
-
     Пропускает файлы с неизменной контрольной суммой.
     """
 
@@ -91,7 +90,7 @@ class Indexer:
             for c in chunks
         ]
 
-        # Сначала удаляем старые чанки файла — важно при смене числа чанков
+        # Сначала удаляем старые чанки файла - важно при смене числа чанков
         self._vector_store.delete_by_file(str(path))
         self._vector_store.add(chunk_ids, texts, vectors, metadatas)
 
